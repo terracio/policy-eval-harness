@@ -97,6 +97,8 @@ Today’s public repo includes:
 - deterministic replay over prebuilt CSV or Parquet universes
 - replay artifacts and evaluation artifacts
 - a domain-neutral approval-workflow demo with checked-in golden outputs
+- a label-comparison workflow with checked-in data and goldens
+- a 2x2 ablation workflow with checked-in panel data and goldens
 
 It does not include:
 

@@ -1,0 +1,4 @@
+split,metric,metric_group,goal,interaction_term,ci_low,ci_high,oriented_interaction,qualitative_read,interaction_epsilon
+holdout,error_case_rate,reliability,minimize,0.25,,,-0.25,interference,0.02
+holdout,pathology_rate,stability,minimize,0.5,,,-0.5,interference,0.02
+holdout,mean_utility,utility,maximize,-0.14750000000000008,,,-0.14750000000000008,interference,0.02

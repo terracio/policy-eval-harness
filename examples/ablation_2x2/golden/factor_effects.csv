@@ -1,0 +1,4 @@
+split,metric,metric_group,goal,baseline_value,a1_b0_value,a0_b1_value,a1_b1_value,a_effect,b_effect,combined_effect,interaction_term
+holdout,error_case_rate,reliability,minimize,0.0,0.0,0.0,0.25,0.0,0.0,0.25,0.25
+holdout,pathology_rate,stability,minimize,0.25,0.0,0.0,0.25,-0.25,-0.25,0.0,0.5
+holdout,mean_utility,utility,maximize,0.395,0.55,0.48250000000000004,0.49,0.15500000000000003,0.08750000000000002,0.09499999999999997,-0.14750000000000008
