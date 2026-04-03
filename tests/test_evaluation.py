@@ -182,6 +182,51 @@ class EvaluationWorkflowTests(unittest.TestCase):
         first_panel = pd.read_parquet(first.comparison_panel_path)
         self.assertEqual(sorted(first_panel["split"].unique().tolist()), ["dev", "holdout"])
 
+    def test_selection_panel_baselines_are_stable_across_equivalent_manifest_locations(self) -> None:
+        panel_rows = [
+            {"case_id": "case-a", "variant_id": "baseline", "split": "holdout", "selected": True, "label": True, "utility": 1.0},
+            {"case_id": "case-b", "variant_id": "baseline", "split": "holdout", "selected": True, "label": False, "utility": -0.5},
+            {"case_id": "case-c", "variant_id": "baseline", "split": "holdout", "selected": False, "label": True, "utility": 1.2},
+            {"case_id": "case-d", "variant_id": "baseline", "split": "holdout", "selected": False, "label": False, "utility": -0.3},
+            {"case_id": "case-a", "variant_id": "candidate", "split": "holdout", "selected": True, "label": True, "utility": 1.0},
+            {"case_id": "case-b", "variant_id": "candidate", "split": "holdout", "selected": False, "label": False, "utility": -0.5},
+            {"case_id": "case-c", "variant_id": "candidate", "split": "holdout", "selected": True, "label": True, "utility": 1.2},
+            {"case_id": "case-d", "variant_id": "candidate", "split": "holdout", "selected": False, "label": False, "utility": -0.3},
+        ]
+        gates_thresholds = {
+            "min_delta_balanced_accuracy_vs_chance": 0.1,
+            "min_delta_mean_utility_vs_accept_all": 0.0,
+            "min_delta_mean_utility_vs_random_rate_matched": 0.2,
+            "min_accept_rate": 0.25,
+            "max_accept_rate": 0.75,
+            "max_parse_fail_rate": 0.0,
+            "max_invalid_output_rate": 0.0,
+            "max_error_decision_rate": 0.0,
+        }
+
+        with tempfile.TemporaryDirectory() as first_tmp, tempfile.TemporaryDirectory() as second_tmp:
+            first_root = Path(first_tmp)
+            second_root = Path(second_tmp)
+            first_manifest = self._write_selection_manifest(
+                panel_rows=panel_rows,
+                gates_thresholds=gates_thresholds,
+                root=first_root,
+            )
+            second_manifest = self._write_selection_manifest(
+                panel_rows=panel_rows,
+                gates_thresholds=gates_thresholds,
+                root=second_root,
+            )
+
+            first = run_evaluation_from_manifest(first_manifest, first_root / "out")
+            second = run_evaluation_from_manifest(second_manifest, second_root / "out")
+
+            assert_frame_equal(pd.read_csv(first.scorecard_path), pd.read_csv(second.scorecard_path))
+            self.assertEqual(
+                json.loads(first.promotion_decisions_path.read_text(encoding="utf-8")),
+                json.loads(second.promotion_decisions_path.read_text(encoding="utf-8")),
+            )
+
     def test_cli_evaluate_run_writes_artifacts(self) -> None:
         manifest_path = self._write_replay_manifest(
             summary_rows=[
@@ -241,9 +286,11 @@ class EvaluationWorkflowTests(unittest.TestCase):
         bootstrap: Dict[str, Any] | None = None,
         splits: Dict[str, Any] | None = None,
         include_split: bool = True,
+        root: Path | None = None,
     ) -> Path:
-        panel_path = self.root / "panel.csv"
-        manifest_path = self.root / "selection-evaluate.yaml"
+        target_root = root or self.root
+        panel_path = target_root / "panel.csv"
+        manifest_path = target_root / "selection-evaluate.yaml"
 
         frame = pd.DataFrame(panel_rows)
         if not include_split and "split" in frame.columns:

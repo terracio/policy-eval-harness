@@ -508,12 +508,12 @@ def _evaluate_selection_candidate(
             "missing paired holdout comparison",
         )
 
-    chance = _build_chance_frame(candidate_holdout, manifest.manifest_hash)
+    selection_seed = _selection_seed_token(candidate_holdout, candidate_variant_id)
+    chance = _build_chance_frame(candidate_holdout, selection_seed)
     accept_all = candidate_holdout.assign(selected=True)
     random_rate_matched = _build_random_rate_matched_frame(
         candidate_holdout,
-        manifest.manifest_hash,
-        candidate_variant_id,
+        selection_seed,
     )
 
     candidate_metrics = _selection_metric_map(candidate_holdout)
@@ -829,18 +829,27 @@ def _metric_ci_low(
     return float(row["ci_low"])
 
 
-def _build_chance_frame(frame: pd.DataFrame, manifest_hash: str) -> pd.DataFrame:
+def _selection_seed_token(frame: pd.DataFrame, candidate_variant_id: str) -> str:
+    return canonical_json(
+        {
+            "candidate_variant_id": candidate_variant_id,
+            "case_ids": sorted(frame["case_id"].map(str).tolist()),
+        }
+    )
+
+
+def _build_chance_frame(frame: pd.DataFrame, seed_token: str) -> pd.DataFrame:
     output = frame.copy()
-    output["selected"] = output["case_id"].map(lambda case_id: _stable_hash(f"{manifest_hash}:chance:{case_id}") < 0.5)
+    output["selected"] = output["case_id"].map(lambda case_id: _stable_hash(f"{seed_token}:chance:{case_id}") < 0.5)
     return output
 
 
-def _build_random_rate_matched_frame(frame: pd.DataFrame, manifest_hash: str, candidate_variant_id: str) -> pd.DataFrame:
+def _build_random_rate_matched_frame(frame: pd.DataFrame, seed_token: str) -> pd.DataFrame:
     output = frame.copy()
     accept_count = int(frame["selected"].sum())
     order = sorted(
         output["case_id"].tolist(),
-        key=lambda case_id: _stable_hash(f"{manifest_hash}:rate-matched:{candidate_variant_id}:{case_id}"),
+        key=lambda case_id: _stable_hash(f"{seed_token}:rate-matched:{case_id}"),
     )
     selected_ids = set(order[:accept_count])
     output["selected"] = output["case_id"].isin(selected_ids)
