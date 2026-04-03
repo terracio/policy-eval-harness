@@ -1,0 +1,4 @@
+name: Synthetic Approval Workflow Demo
+description: Replay-driven approval policy evaluation with deterministic public-safe example assets.
+replay_manifest: replay.yaml
+evaluation_manifest: evaluate.yaml

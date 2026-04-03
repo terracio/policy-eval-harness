@@ -1,0 +1,9 @@
+- variant_id: approval_baseline_v1
+  policy:
+    import_path: policy_eval_harness.demo:approval_baseline_v1
+- variant_id: approval_targeted_v2
+  policy:
+    import_path: policy_eval_harness.demo:approval_targeted_v2
+- variant_id: approval_overactive_v1
+  policy:
+    import_path: policy_eval_harness.demo:approval_overactive_v1

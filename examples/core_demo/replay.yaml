@@ -1,0 +1,12 @@
+universe:
+  cases_path: cases.csv
+  steps_path: steps.csv
+executor:
+  import_path: policy_eval_harness.demo:approval_workflow_executor
+variants:
+  path: variants.yaml
+run:
+  variant_ids:
+    - approval_baseline_v1
+    - approval_targeted_v2
+    - approval_overactive_v1
