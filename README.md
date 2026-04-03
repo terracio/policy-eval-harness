@@ -1,6 +1,6 @@
 # policy-eval-harness
 
-`policy-eval-harness` is a standalone Python package for a replay-driven policy evaluation workflow in sequential systems. This repository currently provides the public package skeleton and CLI contract only.
+`policy-eval-harness` is a standalone Python package for deterministic replay-driven policy evaluation in sequential systems. The current public core loads a prebuilt universe from CSV or Parquet, replays one or more Python-callable policy variants against the exact same ordered case set, and writes deterministic replay artifacts.
 
 ## Install
 
@@ -17,3 +17,21 @@ python -m pip install -e .
 policy-eval --help
 ```
 
+## Replay Run
+
+```bash
+policy-eval replay run --manifest path/to/replay.yaml --out-dir ./artifacts
+```
+
+The replay manifest locks three public inputs:
+
+- `universe`: `cases_path`, `steps_path`
+- `executor`: `import_path`, optional `params`
+- `variants`: `path`
+- `run`: `variant_ids`
+
+The command writes:
+
+- `episode_summary.csv`
+- `step_trace.parquet`
+- `run_metadata.json`
