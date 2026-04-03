@@ -4,9 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "policy-eval-harness"
-version = "0.0.0"
-description = "Replay-driven policy evaluation harness skeleton."
+version = "0.1.0"
+description = "Replay-driven failure analysis and promotion-gated policy iteration for sequential agentic systems."
 readme = "README.md"
+license = {file = "LICENSE"}
 requires-python = ">=3.10"
 dependencies = [
   "typer>=0.12,<1.0",

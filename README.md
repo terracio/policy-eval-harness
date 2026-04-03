@@ -108,9 +108,13 @@ The main demo is still the primary entrypoint. `replay run` and `evaluate run` e
 - `docs/methodology.md`: problem framing, invariants, and limitations
 - `docs/case_study.md`: walk-through of the approval-workflow demo
 - `docs/design_principles.md`: design tradeoffs behind the repo
+- `docs/publication_readiness.md`: final release-gate checklist and verdict for `v0.1.0`
+- `docs/releases/v0.1.0.md`: scope note for the first public release
 
 ## Read More
 
 - [Methodology](docs/methodology.md)
 - [Case Study](docs/case_study.md)
 - [Design Principles](docs/design_principles.md)
+- [Publication Readiness](docs/publication_readiness.md)
+- [v0.1.0 Release Note](docs/releases/v0.1.0.md)
