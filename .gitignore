@@ -5,4 +5,4 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .DS_Store
-
+examples/core_demo/golden/evaluate/inputs/evaluate.resolved.yaml
