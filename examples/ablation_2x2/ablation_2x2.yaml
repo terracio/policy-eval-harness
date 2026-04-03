@@ -1,0 +1,20 @@
+input_scorecard_or_panel_path: comparison_panel.csv
+split: holdout
+variant_map:
+  A0_B0: approval_base
+  A1_B0: approval_guarded
+  A0_B1: approval_prioritized
+  A1_B1: approval_guarded_prioritized
+metrics:
+  - name: mean_utility
+    group: utility
+    goal: maximize
+    interaction_epsilon: 0.02
+  - name: pathology_rate
+    group: stability
+    goal: minimize
+    interaction_epsilon: 0.02
+  - name: error_case_rate
+    group: reliability
+    goal: minimize
+    interaction_epsilon: 0.02

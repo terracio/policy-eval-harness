@@ -31,6 +31,11 @@ The public repo currently lets you reproduce a full end-to-end methodology loop 
 
 The bundled example shows one candidate that should be promoted and one that should fail clearly.
 
+It also includes two secondary methodology workflows:
+
+- a label-comparison example showing how target construction can dominate out-of-sample signal quality
+- a 2x2 ablation example showing how interaction effects can surface interference that aggregate wins hide
+
 ## Quickstart
 
 ```bash
@@ -75,16 +80,21 @@ After installation, the current public commands are:
 policy-eval demo run --manifest examples/core_demo/demo.yaml --out-dir ./artifacts/core_demo
 policy-eval replay run --manifest path/to/replay.yaml --out-dir ./artifacts/replay
 policy-eval evaluate run --manifest path/to/evaluate.yaml --out-dir ./artifacts/evaluate
+policy-eval workflow label-compare run --manifest examples/label_compare/label_compare.yaml --out-dir ./artifacts/label_compare
+policy-eval workflow ablation-2x2 run --manifest examples/ablation_2x2/ablation_2x2.yaml --out-dir ./artifacts/ablation_2x2
 ```
 
-The main demo is the primary entrypoint. `replay run` and `evaluate run` expose the same workflow in separate stages for teams that want to inspect intermediate artifacts.
+The main demo is still the primary entrypoint. `replay run` and `evaluate run` expose that core workflow in separate stages, while the two `workflow` commands package secondary methodology patterns.
 
 ## Repo Map
 
 - `examples/core_demo/`: checked-in synthetic universe, manifests, and golden outputs
+- `examples/label_compare/`: fixed tabular dataset, manifest, and golden outputs for label-scheme comparisons
+- `examples/ablation_2x2/`: fixed comparison panel, manifest, and golden outputs for interaction analysis
 - `src/policy_eval_harness/replay/`: deterministic replay runtime and public replay types
 - `src/policy_eval_harness/evaluation/`: scorecards and promotion-gate evaluation
 - `src/policy_eval_harness/demo/`: bundled approval-workflow demo executor and orchestrator
+- `src/policy_eval_harness/workflows/`: secondary label-comparison and ablation workflow runners
 - `docs/methodology.md`: problem framing, invariants, and limitations
 - `docs/case_study.md`: walk-through of the approval-workflow demo
 - `docs/design_principles.md`: design tradeoffs behind the repo

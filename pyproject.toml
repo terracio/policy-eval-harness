@@ -14,6 +14,7 @@ dependencies = [
   "pandas>=2.0,<3.0",
   "numpy>=1.24,<3.0",
   "pyarrow>=14.0,<20.0",
+  "scikit-learn>=1.4,<2.0",
 ]
 
 [project.scripts]
@@ -24,4 +25,3 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
