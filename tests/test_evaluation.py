@@ -131,6 +131,30 @@ class EvaluationWorkflowTests(unittest.TestCase):
         self.assertAlmostEqual(accept_rate["candidate_value"], 0.5)
         self.assertEqual(decisions["candidates"][0]["verdict"], "pass")
 
+    def test_selection_panel_requires_paired_holdout_coverage_for_verdict(self) -> None:
+        manifest_path = self._write_selection_manifest(
+            panel_rows=[
+                {"case_id": "case-a", "variant_id": "baseline", "split": "holdout", "selected": True, "label": True, "utility": 1.0},
+                {"case_id": "case-b", "variant_id": "candidate", "split": "holdout", "selected": True, "label": True, "utility": 1.0},
+                {"case_id": "case-c", "variant_id": "candidate", "split": "holdout", "selected": False, "label": False, "utility": 0.0},
+            ],
+        )
+
+        artifacts = run_evaluation_from_manifest(manifest_path, self.root / "selection-no-pair")
+        scorecard = pd.read_csv(artifacts.scorecard_path)
+        decisions = json.loads(artifacts.promotion_decisions_path.read_text(encoding="utf-8"))
+
+        balanced_accuracy = scorecard[
+            (scorecard["candidate_variant_id"] == "candidate") & (scorecard["metric"] == "balanced_accuracy")
+        ].iloc[0]
+        self.assertEqual(int(balanced_accuracy["n_paired"]), 0)
+        self.assertTrue(pd.isna(balanced_accuracy["candidate_value"]))
+        self.assertEqual(decisions["candidates"][0]["verdict"], "no_verdict")
+        self.assertEqual(
+            decisions["candidates"][0]["failure_reasons"],
+            ["missing paired holdout comparison"],
+        )
+
     def test_time_holdout_and_bootstrap_are_deterministic(self) -> None:
         manifest_path = self._write_selection_manifest(
             panel_rows=[

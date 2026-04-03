@@ -491,15 +491,32 @@ def _evaluate_selection_candidate(
     thresholds = dict(DEFAULT_SELECTION_THRESHOLDS)
     thresholds.update(manifest.gates.thresholds)
 
-    holdout = panel[(panel["split"] == SPLIT_HOLDOUT) & (panel["variant_id"] == candidate_variant_id)].copy()
-    if holdout.empty:
+    holdout_panel = panel[panel["split"] == SPLIT_HOLDOUT]
+    raw_candidate_holdout = holdout_panel[holdout_panel["variant_id"] == candidate_variant_id]
+    if raw_candidate_holdout.empty:
         return _no_verdict(candidate_variant_id, thresholds, {}, "missing holdout candidate rows")
+    baseline_holdout, candidate_holdout, n_union, n_paired = _paired_frames(
+        holdout_panel,
+        manifest.baseline_variant_id,
+        candidate_variant_id,
+    )
+    if baseline_holdout.empty or n_paired == 0:
+        return _no_verdict(
+            candidate_variant_id,
+            thresholds,
+            {"paired_coverage_rate": _safe_ratio(n_paired, n_union)},
+            "missing paired holdout comparison",
+        )
 
-    chance = _build_chance_frame(holdout, manifest.manifest_hash)
-    accept_all = holdout.assign(selected=True)
-    random_rate_matched = _build_random_rate_matched_frame(holdout, manifest.manifest_hash, candidate_variant_id)
+    chance = _build_chance_frame(candidate_holdout, manifest.manifest_hash)
+    accept_all = candidate_holdout.assign(selected=True)
+    random_rate_matched = _build_random_rate_matched_frame(
+        candidate_holdout,
+        manifest.manifest_hash,
+        candidate_variant_id,
+    )
 
-    candidate_metrics = _selection_metric_map(holdout)
+    candidate_metrics = _selection_metric_map(candidate_holdout)
     chance_metrics = _selection_metric_map(chance)
     accept_all_metrics = _selection_metric_map(accept_all)
     random_rate_matched_metrics = _selection_metric_map(random_rate_matched)
@@ -514,6 +531,7 @@ def _evaluate_selection_candidate(
         "parse_fail_rate": candidate_metrics["parse_fail_rate"],
         "invalid_output_rate": candidate_metrics["invalid_output_rate"],
         "error_decision_rate": candidate_metrics["error_decision_rate"],
+        "paired_coverage_rate": _safe_ratio(n_paired, n_union),
     }
 
     gate_results = [
