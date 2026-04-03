@@ -39,7 +39,7 @@ It also includes two secondary methodology workflows:
 ## Quickstart
 
 ```bash
-python3.12 -m venv .venv
+python3.10 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e .
@@ -47,6 +47,16 @@ policy-eval demo run --manifest examples/core_demo/demo.yaml --out-dir ./artifac
 ```
 
 That command writes a deterministic artifact bundle under `./artifacts/core_demo`.
+
+## Verification
+
+The public contract verification script regenerates the checked-in demo and workflow examples, then compares normalized CSV, JSON, Markdown, and Parquet artifacts against the golden files:
+
+```bash
+python scripts/verify_public_contracts.py
+```
+
+CI runs that same verification alongside the unit test suite on Python 3.10.
 
 ## Expected Outputs
 
