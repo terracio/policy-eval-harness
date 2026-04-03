@@ -1,37 +1,96 @@
 # policy-eval-harness
 
-`policy-eval-harness` is a standalone Python package for deterministic replay-driven policy evaluation in sequential systems. The current public core loads a prebuilt universe from CSV or Parquet, replays one or more Python-callable policy variants against the exact same ordered case set, and writes deterministic replay artifacts.
+A reference methodology for replay-driven failure analysis and promotion-gated policy iteration in sequential agentic systems.
 
-## Install
+## Why This Exists
+
+Many AI teams can trace agent runs, score outputs, and compare prompts. Fewer teams can answer a stricter question: should a new sequential policy be promoted when behavior unfolds over time, utility matters, and baseline and candidate must face the exact same opportunities?
+
+`policy-eval-harness` is a local-first reference implementation for that workflow. It freezes a sequential evaluation universe, replays baseline and candidate policies against the same ordered cases, and turns the result into auditable promotion decisions.
+
+## When To Use It
+
+Use this approach when you are evaluating a policy that:
+
+- acts over multiple time steps instead of one static input
+- can wait, escalate, or terminate early
+- needs paired comparison against a baseline on the same cases
+- should be promoted only if explicit utility and reliability gates pass
+
+This repo is not trying to replace tracing, rubric scoring, or general-purpose eval platforms. Those tools are useful. This repo is narrower: it focuses on decision-grade iteration for sequential policies where deterministic replay and paired promotion gates matter.
+
+## What You Can Reproduce
+
+The public repo currently lets you reproduce a full end-to-end methodology loop on a domain-neutral approval workflow:
+
+- load a fixed public-safe evaluation universe from CSV
+- replay three policy variants over the same ordered cases
+- generate deterministic replay artifacts
+- evaluate candidates against a shared baseline on dev and holdout
+- inspect scorecards and promotion verdicts backed by explicit thresholds
+
+The bundled example shows one candidate that should be promoted and one that should fail clearly.
+
+## Quickstart
 
 ```bash
-python -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e .
+policy-eval demo run --manifest examples/core_demo/demo.yaml --out-dir ./artifacts/core_demo
 ```
 
-## CLI Help
+That command writes a deterministic artifact bundle under `./artifacts/core_demo`.
+
+## Expected Outputs
+
+The main demo produces:
+
+- `replay/_combined/episode_summary.csv`
+- `replay/_combined/step_trace.parquet`
+- `replay/_combined/run_metadata.json`
+- per-variant replay bundles under `replay/<variant_id>/`
+- `evaluate/comparison_panel.parquet`
+- `evaluate/scorecard.csv`
+- `evaluate/promotion_decisions.json`
+
+At a high level, the workflow is:
+
+```mermaid
+flowchart LR
+    A["Frozen evaluation universe"] --> B["Paired replay across variants"]
+    B --> C["Comparison panel and scorecard"]
+    C --> D["Promotion verdict"]
+    C --> E["Failure analysis"]
+    E --> F["Targeted policy change"]
+    F --> B
+```
+
+## Public Command Surface
+
+After installation, the current public commands are:
 
 ```bash
-policy-eval --help
+policy-eval demo run --manifest examples/core_demo/demo.yaml --out-dir ./artifacts/core_demo
+policy-eval replay run --manifest path/to/replay.yaml --out-dir ./artifacts/replay
+policy-eval evaluate run --manifest path/to/evaluate.yaml --out-dir ./artifacts/evaluate
 ```
 
-## Replay Run
+The main demo is the primary entrypoint. `replay run` and `evaluate run` expose the same workflow in separate stages for teams that want to inspect intermediate artifacts.
 
-```bash
-policy-eval replay run --manifest path/to/replay.yaml --out-dir ./artifacts
-```
+## Repo Map
 
-The replay manifest locks three public inputs:
+- `examples/core_demo/`: checked-in synthetic universe, manifests, and golden outputs
+- `src/policy_eval_harness/replay/`: deterministic replay runtime and public replay types
+- `src/policy_eval_harness/evaluation/`: scorecards and promotion-gate evaluation
+- `src/policy_eval_harness/demo/`: bundled approval-workflow demo executor and orchestrator
+- `docs/methodology.md`: problem framing, invariants, and limitations
+- `docs/case_study.md`: walk-through of the approval-workflow demo
+- `docs/design_principles.md`: design tradeoffs behind the repo
 
-- `universe`: `cases_path`, `steps_path`
-- `executor`: `import_path`, optional `params`
-- `variants`: `path`
-- `run`: `variant_ids`
+## Read More
 
-The command writes:
-
-- `episode_summary.csv`
-- `step_trace.parquet`
-- `run_metadata.json`
+- [Methodology](docs/methodology.md)
+- [Case Study](docs/case_study.md)
+- [Design Principles](docs/design_principles.md)
