@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 import pandas as pd
+import yaml
 from pandas.testing import assert_frame_equal
 from typer.testing import CliRunner
 
@@ -98,6 +99,28 @@ class WorkflowTests(unittest.TestCase):
                 out_dir / relative_path,
                 self.ablation_root / "golden" / relative_path,
             )
+
+    def test_ablation_bootstrap_is_deterministic(self) -> None:
+        source_manifest = yaml.safe_load((self.ablation_root / "ablation_2x2.yaml").read_text(encoding="utf-8"))
+        source_manifest["input_scorecard_or_panel_path"] = str(self.ablation_root / "comparison_panel.csv")
+        source_manifest["bootstrap"] = {"enabled": True, "n_samples": 32, "seed": 11}
+
+        first_manifest = self.root / "ablation-bootstrap-first.yaml"
+        second_manifest = self.root / "ablation-bootstrap-second.yaml"
+        first_manifest.write_text(yaml.safe_dump(source_manifest, sort_keys=False), encoding="utf-8")
+        second_manifest.write_text(yaml.safe_dump(source_manifest, sort_keys=False), encoding="utf-8")
+
+        first = run_ablation_2x2_from_manifest(first_manifest, self.root / "ablation-bootstrap-first")
+        second = run_ablation_2x2_from_manifest(second_manifest, self.root / "ablation-bootstrap-second")
+
+        assert_frame_equal(
+            pd.read_csv(first.interaction_summary_path),
+            pd.read_csv(second.interaction_summary_path),
+            check_dtype=False,
+        )
+        interaction_summary = pd.read_csv(first.interaction_summary_path).set_index("metric")
+        self.assertFalse(pd.isna(interaction_summary.loc["mean_utility", "ci_low"]))
+        self.assertFalse(pd.isna(interaction_summary.loc["mean_utility", "ci_high"]))
 
     def _assert_file_matches(self, actual_path: Path, expected_path: Path) -> None:
         self.assertTrue(actual_path.exists(), str(actual_path))

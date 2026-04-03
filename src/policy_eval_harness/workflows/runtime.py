@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -174,6 +173,12 @@ def run_ablation_2x2_from_manifest(manifest_path: Path, out_dir: Path) -> Ablati
         interaction_term = combined_effect - a_effect - b_effect
         oriented_interaction = interaction_term * _goal_sign(metric.goal)
         qualitative_read = _qualitative_read(oriented_interaction, metric.interaction_epsilon)
+        ci_low, ci_high = _bootstrap_interaction_ci(
+            manifest=manifest,
+            frame=frame,
+            source_kind=source_kind,
+            metric=metric,
+        )
 
         metric_rows.append(
             {
@@ -198,6 +203,8 @@ def run_ablation_2x2_from_manifest(manifest_path: Path, out_dir: Path) -> Ablati
                 "metric_group": metric.group,
                 "goal": metric.goal,
                 "interaction_term": interaction_term,
+                "ci_low": ci_low,
+                "ci_high": ci_high,
                 "oriented_interaction": oriented_interaction,
                 "qualitative_read": qualitative_read,
                 "interaction_epsilon": metric.interaction_epsilon,
@@ -361,6 +368,52 @@ def _metric_value_from_input(
         labels = variant_frame["label"].map(_to_bool)
         return float(_balanced_accuracy(selected, labels))
     raise ValueError(f"Unsupported ablation metric: {metric_name!r}")
+
+
+def _bootstrap_interaction_ci(
+    *,
+    manifest: AblationManifest,
+    frame: pd.DataFrame,
+    source_kind: str,
+    metric: AblationMetricConfig,
+) -> tuple[float | None, float | None]:
+    if source_kind != "panel":
+        return None, None
+    if not bool(manifest.bootstrap.get("enabled", False)):
+        return None, None
+
+    n_samples = int(manifest.bootstrap.get("n_samples", 0) or 0)
+    if n_samples <= 0:
+        raise ValueError("Ablation bootstrap requires 'n_samples' > 0 when enabled.")
+    seed = int(manifest.bootstrap.get("seed", 0) or 0)
+
+    split_frame = frame[frame["split"] == manifest.split].copy()
+    shared_case_ids = _shared_case_ids(split_frame, manifest.variant_map.values())
+    if not shared_case_ids:
+        raise ValueError("Ablation bootstrap requires paired case coverage across all four variants.")
+
+    rng = np.random.default_rng(seed)
+    interactions: List[float] = []
+    for _ in range(n_samples):
+        sampled_case_ids = rng.choice(shared_case_ids, size=len(shared_case_ids), replace=True)
+        sampled = _resample_panel_by_case(split_frame, sampled_case_ids)
+        values = {
+            key: _metric_value_from_input(
+                frame=sampled,
+                source_kind="panel",
+                split=manifest.split,
+                variant_id=variant_id,
+                metric_name=metric.name,
+            )
+            for key, variant_id in manifest.variant_map.items()
+        }
+        baseline_value = values["A0_B0"]
+        a_effect = values["A1_B0"] - baseline_value
+        b_effect = values["A0_B1"] - baseline_value
+        combined_effect = values["A1_B1"] - baseline_value
+        interactions.append(combined_effect - a_effect - b_effect)
+
+    return float(np.quantile(interactions, 0.025)), float(np.quantile(interactions, 0.975))
 
 
 def _build_model(model_name: str, random_seed: int) -> Any:
@@ -537,3 +590,20 @@ def _require_columns(frame: pd.DataFrame, required_columns: Iterable[str], label
     missing = sorted(set(required_columns) - set(frame.columns))
     if missing:
         raise ValueError(f"{label} is missing required columns: {', '.join(missing)}")
+
+
+def _shared_case_ids(frame: pd.DataFrame, variant_ids: Iterable[str]) -> List[str]:
+    shared: set[str] | None = None
+    for variant_id in variant_ids:
+        variant_cases = set(frame[frame["variant_id"] == variant_id]["case_id"].map(str).tolist())
+        shared = variant_cases if shared is None else shared & variant_cases
+    return sorted(shared or set())
+
+
+def _resample_panel_by_case(frame: pd.DataFrame, sampled_case_ids: Sequence[str]) -> pd.DataFrame:
+    parts: List[pd.DataFrame] = []
+    for sample_index, case_id in enumerate(sampled_case_ids):
+        case_frame = frame[frame["case_id"] == case_id].copy()
+        case_frame["case_id"] = case_frame["case_id"].map(str) + f"__boot_{sample_index:04d}"
+        parts.append(case_frame)
+    return pd.concat(parts, ignore_index=True) if parts else frame.iloc[0:0].copy()
