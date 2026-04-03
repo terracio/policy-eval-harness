@@ -20,7 +20,7 @@ policy-eval --help
 ## Replay Run
 
 ```bash
-policy-eval replay run --manifest examples/replay-manifest.yaml --out-dir ./artifacts
+policy-eval replay run --manifest path/to/replay.yaml --out-dir ./artifacts
 ```
 
 The replay manifest locks three public inputs:
