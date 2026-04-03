@@ -1,23 +1,56 @@
 # policy-eval-harness
 
+[![CI](https://github.com/terracio/policy-eval-harness/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/terracio/policy-eval-harness/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Python 3.10](https://img.shields.io/badge/python-3.10-blue.svg)](https://www.python.org/downloads/release/python-3100/)
+[![Version 0.1.0](https://img.shields.io/badge/version-0.1.0-black.svg)](docs/releases/v0.1.0.md)
+
 A reference methodology for replay-driven failure analysis and promotion-gated policy iteration in sequential agentic systems.
 
-## Why This Exists
+**TL;DR:** This repo helps teams prove whether a new AI policy is actually better than the old one before shipping it.
 
-Many AI teams can trace agent runs, score outputs, and compare prompts. Fewer teams can answer a stricter question: should a new sequential policy be promoted when behavior unfolds over time, utility matters, and baseline and candidate must face the exact same opportunities?
+**Business impact:** It replaces vibes-based AI iteration with deterministic replay, scorecards, and explicit promotion gates.
 
-`policy-eval-harness` is a local-first reference implementation for that workflow. It freezes a sequential evaluation universe, replays baseline and candidate policies against the same ordered cases, and turns the result into auditable promotion decisions.
+## At A Glance
 
-## When To Use It
+Many teams can trace an agent run or grade a single output. Fewer teams can answer the harder question: if a policy makes decisions over time, should the new version replace the old one?
 
-Use this approach when you are evaluating a policy that:
+`policy-eval-harness` is a local-first reference implementation for that problem. In practice, it does four things:
 
-- acts over multiple time steps instead of one static input
-- can wait, escalate, or terminate early
-- needs paired comparison against a baseline on the same cases
-- should be promoted only if explicit utility and reliability gates pass
+- freezes the same evaluation cases for baseline and candidate
+- replays both policies against that exact same ordered universe
+- scores utility, behavior, and reliability on dev and holdout
+- promotes or rejects the candidate using explicit gates
 
-This repo is not trying to replace tracing, rubric scoring, or general-purpose eval platforms. Those tools are useful. This repo is narrower: it focuses on decision-grade iteration for sequential policies where deterministic replay and paired promotion gates matter.
+```mermaid
+flowchart LR
+    A["Freeze the evaluation universe"] --> B["Replay baseline and candidate on the same cases"]
+    B --> C["Generate scorecard and diagnostics"]
+    C --> D["Promote, reject, or iterate"]
+```
+
+## Where This Matters
+
+This approach is useful anywhere an AI system makes sequential decisions and you need proof, not intuition:
+
+| Area | Example Policy | Why Replay Matters |
+|---|---|---|
+| Fraud and risk review | Approve, reject, or escalate a suspicious case | The new policy must face the exact same cases as the old one |
+| Claims and underwriting | Accept, request more info, or route to manual review | Timing and escalation behavior affect downstream utility |
+| Customer support ops | Answer now, wait, or escalate to a human | Averages hide whether the policy over-escalates or fails late |
+| Compliance workflows | Clear, block, or send for secondary review | Promotion decisions need auditability, not prompt vibes |
+| Agent routing systems | Continue autonomously or hand off to a specialist | The failure mode is often in the sequence, not one output |
+
+## Why Not Just Use Regular Evals?
+
+Most eval tooling is strongest for static outputs: prompt comparisons, rubric scoring, trace inspection, and CI checks.
+
+This repo is narrower. It is for sequential policies where:
+
+- behavior unfolds over multiple steps
+- the candidate must be compared against the baseline on the same opportunities
+- utility matters, not just output quality
+- promotion should depend on explicit gates instead of qualitative preference
 
 ## What You Can Reproduce
 
@@ -70,17 +103,15 @@ The main demo produces:
 - `evaluate/scorecard.csv`
 - `evaluate/promotion_decisions.json`
 
-At a high level, the workflow is:
+The evaluation gate generates a deterministic holdout scorecard comparing each candidate against the shared baseline. The bundled synthetic approval demo looks like this:
 
-```mermaid
-flowchart LR
-    A["Frozen evaluation universe"] --> B["Paired replay across variants"]
-    B --> C["Comparison panel and scorecard"]
-    C --> D["Promotion verdict"]
-    C --> E["Failure analysis"]
-    E --> F["Targeted policy change"]
-    F --> B
-```
+| Policy Variant | Mean Utility | Delta vs Baseline | Pathology Rate | Error Case Rate | Verdict |
+|---|---:|---:|---:|---:|---|
+| `approval_baseline_v1` | `0.790` | `-` | `0.00` | `0.00` | `-` |
+| `approval_targeted_v2` | `0.885` | `+0.095` | `0.00` | `0.00` | `PROMOTE` |
+| `approval_overactive_v1` | `-0.150` | `-0.940` | `0.00` | `0.00` | `REJECT` |
+
+That gives a reader the core idea immediately: same cases, explicit comparison, and a promotion decision backed by a scorecard.
 
 ## Public Command Surface
 
