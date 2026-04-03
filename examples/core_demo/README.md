@@ -6,7 +6,7 @@ This example simulates a sequential approval workflow where a policy can `APPROV
 - `approval_targeted_v2` is designed to promote on holdout.
 - `approval_overactive_v1` is intentionally too eager and should fail promotion.
 
-The main repo docs are added in `CODS-35`; this folder only holds the runnable public-safe demo assets.
+This folder holds the runnable public-safe demo assets; the broader methodology and case-study docs live at the repo root under `README.md` and `docs/`.
 
 Checked-in golden outputs live under `golden/`. `demo.yaml` regenerates the full bundle, while `evaluate.yaml`
 can also be run on its own against the checked-in replay goldens.
