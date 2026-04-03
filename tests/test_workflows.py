@@ -122,6 +122,74 @@ class WorkflowTests(unittest.TestCase):
         self.assertFalse(pd.isna(interaction_summary.loc["mean_utility", "ci_low"]))
         self.assertFalse(pd.isna(interaction_summary.loc["mean_utility", "ci_high"]))
 
+    def test_ablation_accepts_standard_evaluator_scorecard_inputs(self) -> None:
+        scorecard_path = self.root / "scorecard.csv"
+        pd.DataFrame(
+            [
+                {
+                    "split": "holdout",
+                    "baseline_variant_id": "base",
+                    "candidate_variant_id": "guarded",
+                    "metric": "mean_utility",
+                    "baseline_value": 0.4,
+                    "candidate_value": 0.6,
+                },
+                {
+                    "split": "holdout",
+                    "baseline_variant_id": "base",
+                    "candidate_variant_id": "prioritized",
+                    "metric": "mean_utility",
+                    "baseline_value": 0.4,
+                    "candidate_value": 0.55,
+                },
+                {
+                    "split": "holdout",
+                    "baseline_variant_id": "base",
+                    "candidate_variant_id": "guarded_prioritized",
+                    "metric": "mean_utility",
+                    "baseline_value": 0.4,
+                    "candidate_value": 0.58,
+                },
+            ]
+        ).to_csv(scorecard_path, index=False)
+
+        manifest_path = self.root / "scorecard-ablation.yaml"
+        manifest_path.write_text(
+            yaml.safe_dump(
+                {
+                    "input_scorecard_or_panel_path": str(scorecard_path),
+                    "split": "holdout",
+                    "variant_map": {
+                        "A0_B0": "base",
+                        "A1_B0": "guarded",
+                        "A0_B1": "prioritized",
+                        "A1_B1": "guarded_prioritized",
+                    },
+                    "metrics": [
+                        {
+                            "name": "mean_utility",
+                            "group": "utility",
+                            "goal": "maximize",
+                            "interaction_epsilon": 0.01,
+                        }
+                    ],
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+
+        artifacts = run_ablation_2x2_from_manifest(manifest_path, self.root / "scorecard-ablation")
+        factor_effects = pd.read_csv(artifacts.factor_effects_path).set_index("metric")
+        summary = pd.read_csv(artifacts.interaction_summary_path).set_index("metric")
+
+        self.assertAlmostEqual(factor_effects.loc["mean_utility", "baseline_value"], 0.4)
+        self.assertAlmostEqual(factor_effects.loc["mean_utility", "a_effect"], 0.2)
+        self.assertAlmostEqual(factor_effects.loc["mean_utility", "b_effect"], 0.15)
+        self.assertAlmostEqual(factor_effects.loc["mean_utility", "combined_effect"], 0.18)
+        self.assertAlmostEqual(factor_effects.loc["mean_utility", "interaction_term"], -0.17)
+        self.assertEqual(summary.loc["mean_utility", "qualitative_read"], "interference")
+
     def _assert_file_matches(self, actual_path: Path, expected_path: Path) -> None:
         self.assertTrue(actual_path.exists(), str(actual_path))
         self.assertTrue(expected_path.exists(), str(expected_path))

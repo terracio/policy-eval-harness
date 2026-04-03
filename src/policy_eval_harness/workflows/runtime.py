@@ -326,16 +326,46 @@ def _metric_value_from_input(
     metric_name: str,
 ) -> float:
     if source_kind == "scorecard":
-        required = {"split", "candidate_variant_id", "metric", "candidate_value"}
+        required = {
+            "split",
+            "baseline_variant_id",
+            "candidate_variant_id",
+            "metric",
+            "baseline_value",
+            "candidate_value",
+        }
         _require_columns(frame, required, "ablation.scorecard")
-        rows = frame[
+        candidate_rows = frame[
             (frame["split"] == split)
             & (frame["candidate_variant_id"] == variant_id)
             & (frame["metric"] == metric_name)
         ]
-        if rows.empty:
-            raise ValueError(f"Missing scorecard row for split={split!r}, variant={variant_id!r}, metric={metric_name!r}")
-        return float(rows.iloc[0]["candidate_value"])
+        if not candidate_rows.empty:
+            return _consistent_numeric_value(
+                candidate_rows["candidate_value"],
+                split=split,
+                variant_id=variant_id,
+                metric_name=metric_name,
+                value_kind="candidate_value",
+            )
+
+        baseline_rows = frame[
+            (frame["split"] == split)
+            & (frame["baseline_variant_id"] == variant_id)
+            & (frame["metric"] == metric_name)
+        ]
+        if not baseline_rows.empty:
+            return _consistent_numeric_value(
+                baseline_rows["baseline_value"],
+                split=split,
+                variant_id=variant_id,
+                metric_name=metric_name,
+                value_kind="baseline_value",
+            )
+
+        raise ValueError(
+            f"Missing scorecard row for split={split!r}, variant={variant_id!r}, metric={metric_name!r}"
+        )
 
     variant_frame = frame[(frame["split"] == split) & (frame["variant_id"] == variant_id)]
     if variant_frame.empty:
@@ -590,6 +620,38 @@ def _require_columns(frame: pd.DataFrame, required_columns: Iterable[str], label
     missing = sorted(set(required_columns) - set(frame.columns))
     if missing:
         raise ValueError(f"{label} is missing required columns: {', '.join(missing)}")
+
+
+def _consistent_numeric_value(
+    values: pd.Series,
+    *,
+    split: str,
+    variant_id: str,
+    metric_name: str,
+    value_kind: str,
+) -> float:
+    numeric_values = pd.to_numeric(values, errors="coerce").dropna()
+    if numeric_values.empty:
+        raise ValueError(
+            "Scorecard {kind} missing numeric value for split={split!r}, variant={variant!r}, metric={metric!r}".format(
+                kind=value_kind,
+                split=split,
+                variant=variant_id,
+                metric=metric_name,
+            )
+        )
+    unique_values = sorted({float(value) for value in numeric_values.tolist()})
+    if len(unique_values) != 1:
+        raise ValueError(
+            "Scorecard {kind} is inconsistent for split={split!r}, variant={variant!r}, metric={metric!r}: {values!r}".format(
+                kind=value_kind,
+                split=split,
+                variant=variant_id,
+                metric=metric_name,
+                values=unique_values,
+            )
+        )
+    return unique_values[0]
 
 
 def _shared_case_ids(frame: pd.DataFrame, variant_ids: Iterable[str]) -> List[str]:
