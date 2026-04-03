@@ -4,6 +4,8 @@ from pathlib import Path
 
 import typer
 
+from policy_eval_harness.replay import run_replay_from_manifest
+
 NOT_IMPLEMENTED_MESSAGE = "Not yet implemented in this skeleton."
 
 app = typer.Typer(
@@ -41,11 +43,14 @@ def demo_run(
 
 @replay_app.command("run")
 def replay_run(
-    manifest: Path = typer.Option(..., exists=False, file_okay=True, dir_okay=False),
+    manifest: Path = typer.Option(..., exists=True, file_okay=True, dir_okay=False),
     out_dir: Path = typer.Option(..., file_okay=False, dir_okay=True),
 ) -> None:
     """Run a replay workflow from a manifest."""
-    _not_implemented(manifest, out_dir)
+    artifacts = run_replay_from_manifest(manifest, out_dir)
+    typer.echo(str(artifacts.episode_summary_path))
+    typer.echo(str(artifacts.step_trace_path))
+    typer.echo(str(artifacts.run_metadata_path))
 
 
 @evaluate_app.command("run")
@@ -60,4 +65,3 @@ def evaluate_run(
 app.add_typer(demo_app, name="demo")
 app.add_typer(replay_app, name="replay")
 app.add_typer(evaluate_app, name="evaluate")
-
