@@ -121,6 +121,7 @@ After installation, the current public commands are:
 policy-eval demo run --manifest examples/core_demo/demo.yaml --out-dir ./artifacts/core_demo
 policy-eval replay run --manifest path/to/replay.yaml --out-dir ./artifacts/replay
 policy-eval evaluate run --manifest path/to/evaluate.yaml --out-dir ./artifacts/evaluate
+policy-eval evaluate trend ./artifacts/iter-01/evaluate ./artifacts/iter-02/evaluate ./artifacts/iter-03/evaluate --json-out ./artifacts/trend.json
 policy-eval workflow label-compare run --manifest examples/label_compare/label_compare.yaml --out-dir ./artifacts/label_compare
 policy-eval workflow ablation-2x2 run --manifest examples/ablation_2x2/ablation_2x2.yaml --out-dir ./artifacts/ablation_2x2
 ```
