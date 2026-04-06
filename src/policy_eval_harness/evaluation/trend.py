@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import statistics
 from dataclasses import dataclass
 from pathlib import Path
@@ -83,6 +84,7 @@ def analyze_policy_iteration_trend(
             split=normalized_split,
             candidate_variant_id=resolved_candidate_variant_id,
             metric=MEAN_UTILITY_METRIC,
+            verdict=verdict,
         )
         iteration_points.append(
             IterationPoint(
@@ -113,10 +115,11 @@ def _build_report(
     iterations_analyzed = len(iteration_points)
     promotion_rate = pass_count / iterations_analyzed if iterations_analyzed else 0.0
     values = [point.mean_utility_delta for point in iteration_points]
-    first_value = values[0] if values else None
-    last_value = values[-1] if values else None
+    finite_values = [value for value in values if math.isfinite(value)]
+    first_value = finite_values[0] if finite_values else None
+    last_value = finite_values[-1] if finite_values else None
 
-    if iterations_analyzed < 2:
+    if len(finite_values) < 2:
         mean_utility_trend = MetricTrend(
             metric=MEAN_UTILITY_METRIC,
             slope=0.0,
@@ -139,7 +142,7 @@ def _build_report(
             iteration_points=list(iteration_points),
         )
 
-    regression = statistics.linear_regression(range(1, iterations_analyzed + 1), values)
+    regression = statistics.linear_regression(range(1, len(finite_values) + 1), finite_values)
     slope = float(regression.slope)
     direction = _trend_direction(slope)
     any_regression = slope < DEGRADING_SLOPE_THRESHOLD
@@ -198,6 +201,8 @@ def _load_candidate_decisions(path: Path) -> dict[str, Mapping[str, Any]]:
         raise FileNotFoundError(f"Required artifact is missing: {path}.")
 
     payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, Mapping):
+        raise ValueError(f"{path} must contain a JSON object.")
     candidates = payload.get("candidates")
     if not isinstance(candidates, list):
         raise ValueError(f"{path} must contain a 'candidates' list.")
@@ -221,6 +226,7 @@ def _read_scorecard_delta(
     split: str,
     candidate_variant_id: str,
     metric: str,
+    verdict: str,
 ) -> float:
     if not path.exists():
         raise FileNotFoundError(f"Required artifact is missing: {path}.")
@@ -247,13 +253,24 @@ def _read_scorecard_delta(
             f"candidate_variant_id={candidate_variant_id!r} in {path}."
         )
 
+    raw_delta = matches[0].get("delta")
     try:
-        return float(matches[0]["delta"])
+        delta = float(raw_delta)
     except (KeyError, TypeError, ValueError) as exc:
+        if verdict == "no_verdict":
+            return math.nan
         raise ValueError(
             f"Scorecard delta is invalid for split={split!r}, metric={metric!r}, "
             f"candidate_variant_id={candidate_variant_id!r} in {path}."
         ) from exc
+    if not math.isfinite(delta):
+        if verdict == "no_verdict":
+            return math.nan
+        raise ValueError(
+            f"Scorecard delta is invalid for split={split!r}, metric={metric!r}, "
+            f"candidate_variant_id={candidate_variant_id!r} in {path}."
+        )
+    return delta
 
 
 def _normalize_split(value: str) -> str:
@@ -283,8 +300,13 @@ def _trend_direction(slope: float) -> str:
 
 
 def _consecutive_decline_streak(values: Sequence[float]) -> int:
+    if not values or not math.isfinite(values[-1]):
+        return 0
+
     streak = 0
     for index in range(len(values) - 1, 0, -1):
+        if not math.isfinite(values[index - 1]):
+            break
         if values[index] < values[index - 1]:
             streak += 1
         else:

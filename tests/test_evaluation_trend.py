@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import tempfile
 import unittest
 from pathlib import Path
@@ -119,6 +120,47 @@ class EvaluationTrendTests(unittest.TestCase):
         self.assertEqual(report.no_verdict_count, 1)
         self.assertAlmostEqual(report.promotion_rate, 0.5)
 
+    def test_no_verdict_blank_delta_is_accepted_and_excluded_from_regression_math(self) -> None:
+        run_dirs = self._write_sequence(
+            [
+                {"candidate": (0.06, "pass")},
+                {"candidate": (None, "no_verdict")},
+                {"candidate": (0.03, "pass")},
+            ],
+            blank_delta_indices={1},
+        )
+
+        report = analyze_policy_iteration_trend(run_dirs)
+
+        self.assertEqual(report.iterations_analyzed, 3)
+        self.assertEqual(report.pass_count, 2)
+        self.assertEqual(report.no_verdict_count, 1)
+        self.assertAlmostEqual(report.promotion_rate, 2 / 3)
+        self.assertEqual(report.mean_utility_trend.direction, "degrading")
+        self.assertAlmostEqual(report.mean_utility_trend.first_value, 0.06)
+        self.assertAlmostEqual(report.mean_utility_trend.last_value, 0.03)
+        self.assertEqual(report.consecutive_decline_streak, 0)
+        self.assertTrue(math.isnan(report.iteration_points[1].mean_utility_delta))
+
+    def test_returns_stable_report_when_fewer_than_two_finite_deltas_remain(self) -> None:
+        run_dirs = self._write_sequence(
+            [
+                {"candidate": (None, "no_verdict")},
+                {"candidate": (0.03, "pass")},
+            ],
+            blank_delta_indices={0},
+        )
+
+        report = analyze_policy_iteration_trend(run_dirs)
+
+        self.assertEqual(report.iterations_analyzed, 2)
+        self.assertEqual(report.mean_utility_trend.direction, "stable")
+        self.assertAlmostEqual(report.mean_utility_trend.slope, 0.0)
+        self.assertFalse(report.any_regression)
+        self.assertAlmostEqual(report.mean_utility_trend.first_value, 0.03)
+        self.assertAlmostEqual(report.mean_utility_trend.last_value, 0.03)
+        self.assertEqual(report.consecutive_decline_streak, 0)
+
     def test_explicit_candidate_selection_across_multi_candidate_runs(self) -> None:
         run_dirs = self._write_sequence(
             [
@@ -189,6 +231,15 @@ class EvaluationTrendTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "mean_utility"):
             analyze_policy_iteration_trend(run_dirs)
 
+    def test_errors_when_non_no_verdict_row_has_blank_delta(self) -> None:
+        run_dirs = self._write_sequence(
+            [{"candidate": (None, "pass")}],
+            blank_delta_indices={0},
+        )
+
+        with self.assertRaisesRegex(ValueError, "Scorecard delta is invalid"):
+            analyze_policy_iteration_trend(run_dirs)
+
     def test_errors_when_requested_candidate_is_missing_from_a_run(self) -> None:
         run_dirs = self._write_sequence(
             [
@@ -241,6 +292,15 @@ class EvaluationTrendTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "window"):
             analyze_policy_iteration_trend(run_dirs, window=0)
 
+    def test_errors_when_promotion_decisions_root_is_not_an_object(self) -> None:
+        run_dirs = self._write_sequence(
+            [{"candidate": (0.01, "pass")}],
+            invalid_decisions_root_indices={0},
+        )
+
+        with self.assertRaisesRegex(ValueError, "JSON object"):
+            analyze_policy_iteration_trend(run_dirs)
+
     def test_cli_exit_on_regression_returns_non_zero(self) -> None:
         run_dirs = self._write_sequence(
             [
@@ -291,17 +351,40 @@ class EvaluationTrendTests(unittest.TestCase):
         self.assertEqual(payload["mean_utility_trend"]["direction"], "degrading")
         self.assertEqual(len(payload["iteration_points"]), 2)
 
+    def test_cli_reports_clean_error_for_invalid_promotion_decisions_payload(self) -> None:
+        run_dirs = self._write_sequence(
+            [{"candidate": (0.02, "pass")}],
+            invalid_decisions_root_indices={0},
+        )
+
+        result = CLI_RUNNER.invoke(
+            app,
+            [
+                "evaluate",
+                "trend",
+                *(str(run_dir) for run_dir in run_dirs),
+            ],
+        )
+
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("promotion_decisions.json", result.stderr)
+        self.assertNotIn("Traceback", result.output)
+
     def _write_sequence(
         self,
-        runs: Sequence[Mapping[str, tuple[float, str]]],
+        runs: Sequence[Mapping[str, tuple[float | None, str]]],
         *,
         missing_scorecard_indices: Iterable[int] = (),
         missing_decisions_indices: Iterable[int] = (),
         omit_holdout_mean_utility_indices: Iterable[int] = (),
+        blank_delta_indices: Iterable[int] = (),
+        invalid_decisions_root_indices: Iterable[int] = (),
     ) -> list[Path]:
         missing_scorecard = set(missing_scorecard_indices)
         missing_decisions = set(missing_decisions_indices)
         omit_holdout_mean_utility = set(omit_holdout_mean_utility_indices)
+        blank_delta = set(blank_delta_indices)
+        invalid_decisions_root = set(invalid_decisions_root_indices)
 
         run_dirs: list[Path] = []
         for index, candidate_map in enumerate(runs, start=1):
@@ -312,18 +395,24 @@ class EvaluationTrendTests(unittest.TestCase):
                     run_dir / "scorecard.csv",
                     candidate_map,
                     omit_holdout_mean_utility=index - 1 in omit_holdout_mean_utility,
+                    blank_delta=index - 1 in blank_delta,
                 )
             if index - 1 not in missing_decisions:
-                self._write_promotion_decisions(run_dir / "promotion_decisions.json", candidate_map)
+                self._write_promotion_decisions(
+                    run_dir / "promotion_decisions.json",
+                    candidate_map,
+                    invalid_root=index - 1 in invalid_decisions_root,
+                )
             run_dirs.append(run_dir)
         return run_dirs
 
     def _write_scorecard(
         self,
         path: Path,
-        candidates: Mapping[str, tuple[float, str]],
+        candidates: Mapping[str, tuple[float | None, str]],
         *,
         omit_holdout_mean_utility: bool = False,
+        blank_delta: bool = False,
     ) -> None:
         rows = []
         for candidate_variant_id, (delta, _) in candidates.items():
@@ -334,7 +423,7 @@ class EvaluationTrendTests(unittest.TestCase):
                         candidate_variant_id=candidate_variant_id,
                         metric="mean_utility",
                         metric_group="utility",
-                        delta=delta,
+                        delta=None if blank_delta else delta,
                     )
                 )
             rows.append(
@@ -343,7 +432,7 @@ class EvaluationTrendTests(unittest.TestCase):
                     candidate_variant_id=candidate_variant_id,
                     metric="mean_utility",
                     metric_group="utility",
-                    delta=delta + 1.0,
+                    delta=1.0 if delta is None else delta + 1.0,
                 )
             )
             rows.append(
@@ -352,7 +441,7 @@ class EvaluationTrendTests(unittest.TestCase):
                     candidate_variant_id=candidate_variant_id,
                     metric="median_utility",
                     metric_group="utility",
-                    delta=delta,
+                    delta=0.0 if delta is None else delta,
                 )
             )
 
@@ -361,7 +450,16 @@ class EvaluationTrendTests(unittest.TestCase):
             writer.writeheader()
             writer.writerows(rows)
 
-    def _write_promotion_decisions(self, path: Path, candidates: Mapping[str, tuple[float, str]]) -> None:
+    def _write_promotion_decisions(
+        self,
+        path: Path,
+        candidates: Mapping[str, tuple[float | None, str]],
+        *,
+        invalid_root: bool = False,
+    ) -> None:
+        if invalid_root:
+            path.write_text("[]\n", encoding="utf-8")
+            return
         payload = {
             "profile_id": "replay_outcomes_v1",
             "gate_profile_id": "sequential_promotion_v1",
@@ -388,10 +486,10 @@ class EvaluationTrendTests(unittest.TestCase):
         candidate_variant_id: str,
         metric: str,
         metric_group: str,
-        delta: float,
+        delta: float | None,
     ) -> dict[str, object]:
         baseline_value = 0.8
-        candidate_value = baseline_value + delta
+        candidate_value = "" if delta is None else baseline_value + delta
         return {
             "profile_id": "replay_outcomes_v1",
             "split": split,
@@ -401,7 +499,7 @@ class EvaluationTrendTests(unittest.TestCase):
             "metric_group": metric_group,
             "baseline_value": baseline_value,
             "candidate_value": candidate_value,
-            "delta": delta,
+            "delta": "" if delta is None else delta,
             "ci_low": "",
             "ci_high": "",
             "n_cases": 8,
