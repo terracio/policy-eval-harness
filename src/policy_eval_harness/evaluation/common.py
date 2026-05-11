@@ -7,7 +7,7 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Sequence
 
 import pandas as pd
 
-from policy_eval_harness.replay.runtime import normalize_json_value
+from policy_eval_harness._utils.json import normalize_json_value
 
 
 def require_columns(frame: pd.DataFrame, required_columns: Iterable[str], label: str) -> None:
@@ -81,4 +81,3 @@ def safe_ratio(numerator: float, denominator: float) -> float:
     if not denominator:
         return math.nan
     return float(numerator / denominator)
-

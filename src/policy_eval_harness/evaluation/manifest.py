@@ -19,7 +19,7 @@ from policy_eval_harness.evaluation.types import (
     SplitConfig,
 )
 from policy_eval_harness.replay import canonical_json
-from policy_eval_harness.replay.runtime import normalize_json_value
+from policy_eval_harness._utils.json import normalize_json_value
 
 
 def load_evaluation_manifest(manifest_path: Path) -> EvaluationManifest:
@@ -191,4 +191,3 @@ def _normalize_mapping(value: Any, field_name: str) -> Dict[str, Any]:
     if not isinstance(value, Mapping):
         raise ValueError(f"Field {field_name!r} must be a mapping when provided.")
     return {str(key): normalize_json_value(item) for key, item in value.items()}
-

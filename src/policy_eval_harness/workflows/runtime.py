@@ -11,7 +11,7 @@ from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.metrics import roc_auc_score
 
 from policy_eval_harness.replay import canonical_json
-from policy_eval_harness.replay.runtime import normalize_json_value
+from policy_eval_harness._utils.json import normalize_json_value
 from policy_eval_harness.workflows.types import (
     AblationArtifacts,
     AblationManifest,
