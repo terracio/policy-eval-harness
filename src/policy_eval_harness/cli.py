@@ -12,8 +12,6 @@ from policy_eval_harness.workflows import (
     run_label_compare_from_manifest,
 )
 
-NOT_IMPLEMENTED_MESSAGE = "Not yet implemented in this skeleton."
-
 app = typer.Typer(
     help="CLI for the policy evaluation harness.",
     no_args_is_help=True,
@@ -42,12 +40,6 @@ ablation_app = typer.Typer(
     help="Commands for 2x2 ablation workflows.",
     no_args_is_help=True,
 )
-
-
-def _not_implemented(manifest: Path, out_dir: Path) -> None:
-    del manifest, out_dir
-    typer.echo(NOT_IMPLEMENTED_MESSAGE, err=True)
-    raise typer.Exit(code=1)
 
 
 @demo_app.command("run")
