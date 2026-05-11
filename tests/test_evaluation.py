@@ -155,6 +155,44 @@ class EvaluationWorkflowTests(unittest.TestCase):
             ["missing paired holdout comparison"],
         )
 
+    def test_selection_panel_fails_partial_paired_coverage_by_default(self) -> None:
+        panel_rows = [
+            {"case_id": "case-a", "variant_id": "baseline", "split": "holdout", "selected": True, "label": True, "utility": 1.0},
+            {"case_id": "case-b", "variant_id": "baseline", "split": "holdout", "selected": False, "label": False, "utility": 0.0},
+            {"case_id": "case-a", "variant_id": "candidate", "split": "holdout", "selected": True, "label": True, "utility": 1.0},
+        ]
+
+        default_manifest = self._write_selection_manifest(
+            panel_rows=panel_rows,
+            gates_thresholds={
+                "min_delta_balanced_accuracy_vs_chance": 0.0,
+                "min_delta_mean_utility_vs_accept_all": 0.0,
+                "min_delta_mean_utility_vs_random_rate_matched": 0.0,
+            },
+        )
+        default_artifacts = run_evaluation_from_manifest(default_manifest, self.root / "partial-default")
+        default_decisions = json.loads(default_artifacts.promotion_decisions_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(default_decisions["candidates"][0]["verdict"], "fail")
+        self.assertIn("min_paired_coverage_rate", default_decisions["candidates"][0]["failure_reasons"])
+        self.assertAlmostEqual(default_decisions["candidates"][0]["observed"]["paired_coverage_rate"], 0.5)
+        self.assertAlmostEqual(default_decisions["candidates"][0]["thresholds"]["min_paired_coverage_rate"], 1.0)
+
+        relaxed_manifest = self._write_selection_manifest(
+            panel_rows=panel_rows,
+            gates_thresholds={
+                "min_delta_balanced_accuracy_vs_chance": 0.0,
+                "min_delta_mean_utility_vs_accept_all": 0.0,
+                "min_delta_mean_utility_vs_random_rate_matched": 0.0,
+                "min_paired_coverage_rate": 0.5,
+            },
+            base_name="selection-relaxed",
+        )
+        relaxed_artifacts = run_evaluation_from_manifest(relaxed_manifest, self.root / "partial-relaxed")
+        relaxed_decisions = json.loads(relaxed_artifacts.promotion_decisions_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(relaxed_decisions["candidates"][0]["verdict"], "pass")
+
     def test_time_holdout_and_bootstrap_are_deterministic(self) -> None:
         manifest_path = self._write_selection_manifest(
             panel_rows=[
@@ -181,6 +219,37 @@ class EvaluationWorkflowTests(unittest.TestCase):
         assert_frame_equal(first_scorecard, second_scorecard)
         first_panel = pd.read_parquet(first.comparison_panel_path)
         self.assertEqual(sorted(first_panel["split"].unique().tolist()), ["dev", "holdout"])
+
+    def test_time_holdout_overrides_existing_split_and_existing_mode_preserves_it(self) -> None:
+        panel_rows = [
+            {"case_id": "case-old", "variant_id": "baseline", "split": "holdout", "opened_at_utc": "2026-01-01T00:00:00Z", "selected": False, "label": False, "utility": 0.0},
+            {"case_id": "case-old", "variant_id": "candidate", "split": "holdout", "opened_at_utc": "2026-01-01T00:00:00Z", "selected": False, "label": False, "utility": 0.0},
+            {"case_id": "case-new", "variant_id": "baseline", "split": "dev", "opened_at_utc": "2026-07-01T00:00:00Z", "selected": True, "label": True, "utility": 1.0},
+            {"case_id": "case-new", "variant_id": "candidate", "split": "dev", "opened_at_utc": "2026-07-01T00:00:00Z", "selected": True, "label": True, "utility": 1.0},
+        ]
+
+        time_manifest = self._write_selection_manifest(
+            panel_rows=panel_rows,
+            splits={
+                "mode": "time_holdout",
+                "field": "opened_at_utc",
+                "holdout_cutoff_utc": "2026-06-01T00:00:00Z",
+            },
+        )
+        time_artifacts = run_evaluation_from_manifest(time_manifest, self.root / "time-override")
+        time_panel = pd.read_parquet(time_artifacts.comparison_panel_path)
+        time_splits = time_panel.drop_duplicates("case_id").set_index("case_id")["split"].to_dict()
+        self.assertEqual(time_splits, {"case-old": "dev", "case-new": "holdout"})
+
+        existing_manifest = self._write_selection_manifest(
+            panel_rows=panel_rows,
+            splits={"mode": "existing"},
+            base_name="selection-existing",
+        )
+        existing_artifacts = run_evaluation_from_manifest(existing_manifest, self.root / "existing-split")
+        existing_panel = pd.read_parquet(existing_artifacts.comparison_panel_path)
+        existing_splits = existing_panel.drop_duplicates("case_id").set_index("case_id")["split"].to_dict()
+        self.assertEqual(existing_splits, {"case-old": "holdout", "case-new": "dev"})
 
     def test_selection_panel_baselines_are_stable_across_equivalent_manifest_locations(self) -> None:
         panel_rows = [
@@ -248,6 +317,31 @@ class EvaluationWorkflowTests(unittest.TestCase):
         self.assertTrue((out_dir / "scorecard.csv").exists())
         self.assertTrue((out_dir / "promotion_decisions.json").exists())
 
+    def test_replay_profile_rejects_duplicate_case_rows(self) -> None:
+        manifest_path = self._write_replay_manifest(
+            summary_rows=[
+                self._summary_row("case-a", "baseline", 0.1),
+                self._summary_row("case-a", "baseline", 0.2),
+                self._summary_row("case-a", "candidate", 0.3),
+            ],
+            cases_rows=[{"case_id": "case-a", "split": "holdout"}],
+        )
+
+        with self.assertRaisesRegex(ValueError, "Duplicate evaluation rows"):
+            run_evaluation_from_manifest(manifest_path, self.root / "duplicate-replay")
+
+    def test_selection_panel_rejects_duplicate_case_rows(self) -> None:
+        manifest_path = self._write_selection_manifest(
+            panel_rows=[
+                {"case_id": "case-a", "variant_id": "baseline", "split": "holdout", "selected": True, "label": True, "utility": 1.0},
+                {"case_id": "case-a", "variant_id": "baseline", "split": "holdout", "selected": False, "label": False, "utility": 0.0},
+                {"case_id": "case-a", "variant_id": "candidate", "split": "holdout", "selected": True, "label": True, "utility": 1.0},
+            ],
+        )
+
+        with self.assertRaisesRegex(ValueError, "Duplicate evaluation rows"):
+            run_evaluation_from_manifest(manifest_path, self.root / "duplicate-selection")
+
     def _write_replay_manifest(
         self,
         *,
@@ -287,10 +381,11 @@ class EvaluationWorkflowTests(unittest.TestCase):
         splits: Dict[str, Any] | None = None,
         include_split: bool = True,
         root: Path | None = None,
+        base_name: str = "selection",
     ) -> Path:
         target_root = root or self.root
-        panel_path = target_root / "panel.csv"
-        manifest_path = target_root / "selection-evaluate.yaml"
+        panel_path = target_root / f"{base_name}-panel.csv"
+        manifest_path = target_root / f"{base_name}-evaluate.yaml"
 
         frame = pd.DataFrame(panel_rows)
         if not include_split and "split" in frame.columns:

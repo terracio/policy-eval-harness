@@ -3,15 +3,18 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 import pandas as pd
 from pandas.testing import assert_frame_equal
 from typer.testing import CliRunner
 
 from policy_eval_harness.cli import app
-from policy_eval_harness.replay import load_universe, run_replay_from_manifest
+from policy_eval_harness.replay import canonical_json, load_universe, run_replay_from_manifest
+from policy_eval_harness.replay.runtime import normalize_json_value
 
 CLI_RUNNER = CliRunner()
 
@@ -23,6 +26,29 @@ class ReplayWorkflowTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self._tmpdir.cleanup()
+
+    def test_json_normalization_handles_timestamp_values(self) -> None:
+        self.assertEqual(
+            normalize_json_value(datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)),
+            "2026-01-01T00:00:00Z",
+        )
+        self.assertEqual(
+            normalize_json_value(pd.Timestamp("2026-01-01T01:00:00+01:00")),
+            "2026-01-01T00:00:00Z",
+        )
+        self.assertEqual(
+            normalize_json_value(pd.Timestamp("2026-01-01T00:00:00")),
+            "2026-01-01T00:00:00Z",
+        )
+        self.assertEqual(
+            normalize_json_value(np.datetime64("2026-01-01T00:00:00.120000000")),
+            "2026-01-01T00:00:00.12Z",
+        )
+        self.assertIsNone(normalize_json_value(pd.NaT))
+        self.assertEqual(
+            canonical_json({"timestamp": datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)}),
+            '{"timestamp":"2026-01-01T00:00:00Z"}',
+        )
 
     def test_load_universe_from_csv_and_parquet_matches(self) -> None:
         cases = [

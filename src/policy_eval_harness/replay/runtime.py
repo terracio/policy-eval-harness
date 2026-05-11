@@ -73,6 +73,8 @@ def canonical_json(value: Any) -> str:
 def normalize_json_value(value: Any) -> Any:
     if value is None:
         return None
+    if isinstance(value, np.datetime64):
+        return _normalize_timestamp(value)
     if isinstance(value, np.generic):
         return normalize_json_value(value.item())
     if isinstance(value, (pd.Timestamp, datetime)):
@@ -660,10 +662,11 @@ def _required_timestamp(value: Any, field_name: str) -> str:
 
 
 def _normalize_timestamp(value: Any) -> Optional[str]:
-    normalized = normalize_json_value(value)
-    if normalized is None:
+    if value is None or pd.isna(value):
         return None
-    timestamp = pd.Timestamp(normalized)
+    timestamp = pd.Timestamp(value)
+    if pd.isna(timestamp):
+        return None
     if timestamp.tzinfo is None:
         timestamp = timestamp.tz_localize("UTC")
     else:

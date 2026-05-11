@@ -64,6 +64,7 @@ DEFAULT_SELECTION_THRESHOLDS = {
     "min_delta_balanced_accuracy_vs_chance": 0.0,
     "min_delta_mean_utility_vs_accept_all": 0.0,
     "min_delta_mean_utility_vs_random_rate_matched": 0.0,
+    "min_paired_coverage_rate": 1.0,
     "min_accept_rate": 0.0,
     "max_accept_rate": 1.0,
     "max_parse_fail_rate": 1.0,
@@ -553,6 +554,12 @@ def _evaluate_selection_candidate(
             thresholds["min_delta_mean_utility_vs_random_rate_matched"],
             ">=",
         ),
+        _gate_result(
+            "min_paired_coverage_rate",
+            observed["paired_coverage_rate"],
+            thresholds["min_paired_coverage_rate"],
+            ">=",
+        ),
         _gate_result("min_accept_rate", observed["accept_rate"], thresholds["min_accept_rate"], ">="),
         _gate_result("max_accept_rate", observed["accept_rate"], thresholds["max_accept_rate"], "<="),
         _gate_result("max_parse_fail_rate", observed["parse_fail_rate"], thresholds["max_parse_fail_rate"], "<="),
@@ -595,11 +602,34 @@ def _paired_frames(
 ) -> Tuple[pd.DataFrame, pd.DataFrame, int, int]:
     baseline = panel[panel["variant_id"] == baseline_variant_id].copy()
     candidate = panel[panel["variant_id"] == candidate_variant_id].copy()
+    _reject_duplicate_case_rows(baseline, baseline_variant_id)
+    _reject_duplicate_case_rows(candidate, candidate_variant_id)
     union_ids = sorted(set(baseline["case_id"]).union(candidate["case_id"]))
     paired_ids = sorted(set(baseline["case_id"]).intersection(candidate["case_id"]))
     baseline = baseline[baseline["case_id"].isin(paired_ids)].sort_values("case_id").reset_index(drop=True)
     candidate = candidate[candidate["case_id"].isin(paired_ids)].sort_values("case_id").reset_index(drop=True)
     return baseline, candidate, len(union_ids), len(paired_ids)
+
+
+def _reject_duplicate_case_rows(frame: pd.DataFrame, variant_id: str) -> None:
+    if frame.empty:
+        return
+    duplicate_mask = frame.duplicated(subset=["split", "variant_id", "case_id"], keep=False)
+    if not duplicate_mask.any():
+        return
+    duplicates = (
+        frame.loc[duplicate_mask, ["split", "variant_id", "case_id"]]
+        .drop_duplicates()
+        .sort_values(["split", "variant_id", "case_id"])
+        .head(5)
+        .to_dict(orient="records")
+    )
+    raise ValueError(
+        "Duplicate evaluation rows for variant_id={!r}; expected one row per split, variant_id, and case_id: {}".format(
+            variant_id,
+            duplicates,
+        )
+    )
 
 
 def _score_replay_metric(
@@ -861,13 +891,15 @@ def _ensure_split(
     split_config: SplitConfig,
     default_field_candidates: Sequence[str],
 ) -> pd.DataFrame:
-    if "split" in frame.columns:
+    if split_config.mode == "existing":
+        if "split" not in frame.columns:
+            raise ValueError("Input rows must include 'split' when splits.mode is 'existing'.")
         output = frame.copy()
         output["split"] = output["split"].map(_normalize_split)
         return output
 
     if split_config.mode != "time_holdout":
-        raise ValueError("Input rows must include 'split' unless splits.mode is 'time_holdout'.")
+        raise ValueError(f"Unsupported splits.mode: {split_config.mode!r}")
 
     field = split_config.field
     if field is None:
@@ -900,7 +932,8 @@ def _ensure_split(
     else:
         raise ValueError("time_holdout requires either holdout_cutoff_utc or holdout_pct.")
 
-    return frame.merge(case_frame[["case_id", "split"]], on="case_id", how="left")
+    output = frame.drop(columns=["split"], errors="ignore")
+    return output.merge(case_frame[["case_id", "split"]], on="case_id", how="left")
 
 
 def _ordered_splits(values: Sequence[str]) -> List[str]:
