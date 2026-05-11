@@ -7,8 +7,18 @@ from typing import Any, Dict, List, Mapping, Optional
 import yaml
 
 from policy_eval_harness._utils.paths import resolve_path
+from policy_eval_harness._utils.manifest import (
+    optional_bool,
+    reject_duplicate_strings,
+    reject_unknown_keys,
+    require_existing_path,
+    require_numeric_mapping_values,
+)
 from policy_eval_harness.evaluation.constants import (
+    DEFAULT_SELECTION_THRESHOLDS,
+    DEFAULT_SEQUENTIAL_THRESHOLDS,
     PROFILE_REPLAY,
+    PROFILE_SELECTION,
     SELECTION_GATES,
     SEQUENTIAL_GATES,
 )
@@ -26,18 +36,33 @@ def load_evaluation_manifest(manifest_path: Path) -> EvaluationManifest:
     manifest_path = manifest_path.resolve()
     raw_manifest = _load_mapping(manifest_path)
     base_dir = manifest_path.parent
+    reject_unknown_keys(
+        raw_manifest,
+        {"profile", "inputs", "baseline_variant_id", "candidate_variant_ids", "splits", "gates", "bootstrap"},
+        "Evaluation manifest",
+    )
 
     profile_id = _require_string(raw_manifest, "profile")
+    if profile_id not in {PROFILE_REPLAY, PROFILE_SELECTION}:
+        raise ValueError(f"Unsupported evaluation profile: {profile_id!r}")
+
     inputs_raw = _require_mapping(raw_manifest, "inputs")
     baseline_variant_id = _require_string(raw_manifest, "baseline_variant_id")
     candidate_variant_ids = tuple(_require_string_list(raw_manifest, "candidate_variant_ids"))
     if not candidate_variant_ids:
         raise ValueError("Manifest field 'candidate_variant_ids' must not be empty.")
+    reject_duplicate_strings(candidate_variant_ids, "Manifest field 'candidate_variant_ids'")
+    if baseline_variant_id in candidate_variant_ids:
+        raise ValueError("Manifest field 'baseline_variant_id' must not also appear in 'candidate_variant_ids'.")
 
     splits_raw = _optional_mapping(raw_manifest, "splits")
     gates_raw = _optional_mapping(raw_manifest, "gates")
     bootstrap_raw = _optional_mapping(raw_manifest, "bootstrap")
+    reject_unknown_keys(splits_raw, {"mode", "field", "holdout_cutoff_utc", "holdout_pct"}, "Manifest field 'splits'")
+    reject_unknown_keys(gates_raw, {"profile", "thresholds"}, "Manifest field 'gates'")
+    reject_unknown_keys(bootstrap_raw, {"enabled", "n_samples", "seed"}, "Manifest field 'bootstrap'")
 
+    _validate_profile_inputs(profile_id, inputs_raw)
     inputs = _normalize_inputs(base_dir, inputs_raw)
     splits = SplitConfig(
         mode=_optional_string(splits_raw, "mode") or "existing",
@@ -45,13 +70,23 @@ def load_evaluation_manifest(manifest_path: Path) -> EvaluationManifest:
         holdout_cutoff_utc=_optional_string(splits_raw, "holdout_cutoff_utc"),
         holdout_pct=_optional_float(splits_raw, "holdout_pct"),
     )
+    _validate_splits(splits)
     default_gate_profile = SEQUENTIAL_GATES if profile_id == PROFILE_REPLAY else SELECTION_GATES
+    gate_profile = _optional_string(gates_raw, "profile") or default_gate_profile
+    if gate_profile != default_gate_profile:
+        raise ValueError(
+            f"Unsupported gates.profile {gate_profile!r} for profile {profile_id!r}; expected {default_gate_profile!r}."
+        )
+    thresholds = _normalize_mapping(gates_raw.get("thresholds", {}), "gates.thresholds")
+    threshold_keys = _supported_threshold_keys(default_gate_profile)
+    reject_unknown_keys(thresholds, threshold_keys, "gates.thresholds")
+    require_numeric_mapping_values(thresholds, "gates.thresholds")
     gates = GateConfig(
-        profile_id=_optional_string(gates_raw, "profile") or default_gate_profile,
-        thresholds=_normalize_mapping(gates_raw.get("thresholds", {}), "gates.thresholds"),
+        profile_id=gate_profile,
+        thresholds=thresholds,
     )
     bootstrap = BootstrapConfig(
-        enabled=bool(bootstrap_raw.get("enabled", False)),
+        enabled=optional_bool(bootstrap_raw.get("enabled"), "bootstrap.enabled", default=False),
         n_samples=int(bootstrap_raw.get("n_samples", 0) or 0),
         seed=int(bootstrap_raw.get("seed", 0) or 0),
     )
@@ -79,6 +114,41 @@ def load_evaluation_manifest(manifest_path: Path) -> EvaluationManifest:
         gates=gates,
         bootstrap=bootstrap,
     )
+
+
+def _validate_profile_inputs(profile_id: str, inputs: Mapping[str, Any]) -> None:
+    if profile_id == PROFILE_REPLAY:
+        reject_unknown_keys(inputs, {"episode_summary_path", "cases_path"}, "Manifest field 'inputs'")
+        _require_string(inputs, "episode_summary_path")
+        return
+    if profile_id == PROFILE_SELECTION:
+        reject_unknown_keys(inputs, {"panel_path"}, "Manifest field 'inputs'")
+        _require_string(inputs, "panel_path")
+        return
+    raise ValueError(f"Unsupported evaluation profile: {profile_id!r}")
+
+
+def _validate_splits(splits: SplitConfig) -> None:
+    if splits.mode == "existing":
+        if splits.field or splits.holdout_cutoff_utc or splits.holdout_pct is not None:
+            raise ValueError("splits.mode 'existing' does not accept field, holdout_cutoff_utc, or holdout_pct.")
+        return
+    if splits.mode != "time_holdout":
+        raise ValueError(f"Unsupported splits.mode: {splits.mode!r}")
+    has_cutoff = splits.holdout_cutoff_utc is not None
+    has_pct = splits.holdout_pct is not None
+    if has_cutoff == has_pct:
+        raise ValueError("splits.mode 'time_holdout' requires exactly one of holdout_cutoff_utc or holdout_pct.")
+    if splits.holdout_pct is not None and not 0 <= splits.holdout_pct <= 1:
+        raise ValueError("splits.holdout_pct must be between 0 and 1.")
+
+
+def _supported_threshold_keys(gate_profile: str) -> set[str]:
+    if gate_profile == SEQUENTIAL_GATES:
+        return set(DEFAULT_SEQUENTIAL_THRESHOLDS) | {"min_delta_mean_utility_ci_low"}
+    if gate_profile == SELECTION_GATES:
+        return set(DEFAULT_SELECTION_THRESHOLDS)
+    raise ValueError(f"Unsupported gates.profile: {gate_profile!r}")
 
 
 def _canonical_manifest(
@@ -120,7 +190,9 @@ def _normalize_inputs(base_dir: Path, inputs: Mapping[str, Any]) -> Dict[str, An
         if key.endswith("_path"):
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"Manifest input {key!r} must be a non-empty path string.")
-            normalized[key] = resolve_path(base_dir, value)
+            path = resolve_path(base_dir, value)
+            require_existing_path(path, f"Manifest input {key!r}")
+            normalized[key] = path
         else:
             normalized[key] = normalize_json_value(value)
     return normalized

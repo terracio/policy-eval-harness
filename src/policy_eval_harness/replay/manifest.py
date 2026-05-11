@@ -9,6 +9,11 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 import yaml
 
 from policy_eval_harness._utils.json import canonical_json, normalize_json_value
+from policy_eval_harness._utils.manifest import (
+    reject_duplicate_strings,
+    reject_unknown_keys,
+    require_existing_path,
+)
 from policy_eval_harness._utils.paths import resolve_path
 from policy_eval_harness.replay.types import (
     ExecutorConfig,
@@ -23,6 +28,7 @@ def load_replay_manifest(manifest_path: Path) -> ReplayManifest:
     manifest_path = manifest_path.resolve()
     manifest_data = _load_mapping(manifest_path)
     base_dir = manifest_path.parent
+    reject_unknown_keys(manifest_data, {"universe", "executor", "variants", "run", "output"}, "Replay manifest")
 
     universe_data = _require_mapping(manifest_data, "universe")
     executor_data = _require_mapping(manifest_data, "executor")
@@ -33,10 +39,20 @@ def load_replay_manifest(manifest_path: Path) -> ReplayManifest:
         output_data = {}
     if not isinstance(output_data, Mapping):
         raise ValueError("Manifest field 'output' must be a mapping when provided.")
+    reject_unknown_keys(universe_data, {"cases_path", "steps_path"}, "Manifest field 'universe'")
+    reject_unknown_keys(executor_data, {"import_path", "params"}, "Manifest field 'executor'")
+    reject_unknown_keys(variants_data, {"path"}, "Manifest field 'variants'")
+    reject_unknown_keys(run_data, {"variant_ids"}, "Manifest field 'run'")
+    reject_unknown_keys(output_data, {"episode_summary", "step_trace", "run_metadata"}, "Manifest field 'output'")
+
+    cases_path = resolve_path(base_dir, _require_string(universe_data, "cases_path"))
+    steps_path = resolve_path(base_dir, _require_string(universe_data, "steps_path"))
+    require_existing_path(cases_path, "Manifest field 'universe.cases_path'")
+    require_existing_path(steps_path, "Manifest field 'universe.steps_path'")
 
     universe = UniverseConfig(
-        cases_path=resolve_path(base_dir, _require_string(universe_data, "cases_path")),
-        steps_path=resolve_path(base_dir, _require_string(universe_data, "steps_path")),
+        cases_path=cases_path,
+        steps_path=steps_path,
     )
     executor = ExecutorConfig(
         import_path=_require_string(executor_data, "import_path"),
@@ -47,8 +63,7 @@ def load_replay_manifest(manifest_path: Path) -> ReplayManifest:
     run_variant_ids = tuple(_require_string_list(run_data, "variant_ids"))
     if not run_variant_ids:
         raise ValueError("Manifest field 'run.variant_ids' must not be empty.")
-    if len(set(run_variant_ids)) != len(run_variant_ids):
-        raise ValueError("Manifest field 'run.variant_ids' contains duplicates.")
+    reject_duplicate_strings(run_variant_ids, "Manifest field 'run.variant_ids'")
 
     variant_map = {variant.variant_id: variant for variant in variants}
     missing_variant_ids = [variant_id for variant_id in run_variant_ids if variant_id not in variant_map]
@@ -125,8 +140,10 @@ def _canonical_manifest(
 
 
 def _load_variants(variants_path: Path) -> Tuple[VariantConfig, ...]:
+    require_existing_path(variants_path, "Manifest field 'variants.path'")
     raw_variants = _load_structured_file(variants_path)
     if isinstance(raw_variants, Mapping):
+        reject_unknown_keys(raw_variants, {"variants"}, "Variant manifest")
         raw_variants = raw_variants.get("variants")
     if not isinstance(raw_variants, list):
         raise ValueError("Variant manifest must be a list or a mapping containing 'variants'.")
@@ -136,11 +153,13 @@ def _load_variants(variants_path: Path) -> Tuple[VariantConfig, ...]:
     for raw_variant in raw_variants:
         if not isinstance(raw_variant, Mapping):
             raise ValueError("Each variant entry must be a mapping.")
+        reject_unknown_keys(raw_variant, {"variant_id", "policy"}, "Variant entry")
         variant_id = _require_string(raw_variant, "variant_id")
         if variant_id in seen_variant_ids:
             raise ValueError("Duplicate variant_id in variant manifest: {!r}".format(variant_id))
         seen_variant_ids.add(variant_id)
         policy_data = _require_mapping(raw_variant, "policy")
+        reject_unknown_keys(policy_data, {"import_path", "params"}, "Variant policy")
         variants.append(
             VariantConfig(
                 variant_id=variant_id,
@@ -216,4 +235,3 @@ def _split_import_path(import_path: str) -> Tuple[str, str]:
     if not module_name or not attribute_path:
         raise ValueError("Import path must use 'module:attribute' or 'module.attribute'.")
     return module_name, attribute_path
-

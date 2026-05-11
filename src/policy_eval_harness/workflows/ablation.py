@@ -6,6 +6,12 @@ from typing import Any, Dict, List, Mapping, Sequence
 import pandas as pd
 
 from policy_eval_harness._utils.json import normalize_json_value
+from policy_eval_harness._utils.manifest import (
+    optional_bool,
+    reject_duplicate_strings,
+    reject_unknown_keys,
+    require_existing_path,
+)
 from policy_eval_harness._utils.paths import resolve_path
 from policy_eval_harness.io.tables import read_table
 from policy_eval_harness.workflows.common import (
@@ -118,8 +124,15 @@ def load_ablation_manifest(manifest_path: Path) -> AblationManifest:
     manifest_path = manifest_path.resolve()
     raw = load_mapping(manifest_path)
     base_dir = manifest_path.parent
+    reject_unknown_keys(
+        raw,
+        {"input_scorecard_or_panel_path", "split", "variant_map", "metrics", "bootstrap"},
+        "Ablation manifest",
+    )
     raw_variant_map = require_mapping(raw, "variant_map")
+    reject_unknown_keys(raw_variant_map, ABLATION_KEYS, "Manifest field 'variant_map'")
     variant_map = {key: require_string(raw_variant_map, key) for key in ABLATION_KEYS}
+    reject_duplicate_strings(variant_map.values(), "Manifest field 'variant_map'")
     metrics_raw = raw.get("metrics", [])
     if not isinstance(metrics_raw, Sequence) or isinstance(metrics_raw, (str, bytes)):
         raise ValueError("Manifest field 'metrics' must be a sequence.")
@@ -128,6 +141,7 @@ def load_ablation_manifest(manifest_path: Path) -> AblationManifest:
     for index, item in enumerate(metrics_raw):
         if not isinstance(item, Mapping):
             raise ValueError(f"metrics[{index}] must be a mapping.")
+        reject_unknown_keys(item, {"name", "goal", "group", "interaction_epsilon"}, f"metrics[{index}]")
         goal = require_string(item, "goal")
         if goal not in {"maximize", "minimize"}:
             raise ValueError("Ablation metric goal must be 'maximize' or 'minimize'.")
@@ -141,16 +155,26 @@ def load_ablation_manifest(manifest_path: Path) -> AblationManifest:
         )
     if not metrics:
         raise ValueError("Manifest field 'metrics' must not be empty.")
+    reject_duplicate_strings((metric.name for metric in metrics), "Manifest field 'metrics.name'")
 
     bootstrap = raw.get("bootstrap", {})
     if bootstrap is None:
         bootstrap = {}
     if not isinstance(bootstrap, Mapping):
         raise ValueError("Manifest field 'bootstrap' must be a mapping when provided.")
+    reject_unknown_keys(bootstrap, {"enabled", "n_samples", "seed"}, "Manifest field 'bootstrap'")
+    bootstrap_enabled = optional_bool(bootstrap.get("enabled"), "bootstrap.enabled", default=False)
+    bootstrap = dict(bootstrap)
+    bootstrap["enabled"] = bootstrap_enabled
+    if bootstrap_enabled and int(bootstrap.get("n_samples", 0) or 0) <= 0:
+        raise ValueError("Ablation bootstrap requires 'n_samples' > 0 when enabled.")
+
+    input_path = resolve_path(base_dir, require_string(raw, "input_scorecard_or_panel_path"))
+    require_existing_path(input_path, "Manifest field 'input_scorecard_or_panel_path'")
 
     return AblationManifest(
         manifest_path=manifest_path,
-        input_path=resolve_path(base_dir, require_string(raw, "input_scorecard_or_panel_path")),
+        input_path=input_path,
         split=optional_string(raw, "split") or "holdout",
         variant_map=variant_map,
         metrics=tuple(metrics),

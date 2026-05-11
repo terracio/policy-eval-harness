@@ -9,6 +9,11 @@ from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.metrics import roc_auc_score
 
 from policy_eval_harness._utils.json import canonical_json
+from policy_eval_harness._utils.manifest import (
+    reject_duplicate_strings,
+    reject_unknown_keys,
+    require_existing_path,
+)
 from policy_eval_harness._utils.paths import resolve_path
 from policy_eval_harness.io.tables import read_table
 from policy_eval_harness.workflows.common import (
@@ -130,15 +135,27 @@ def load_label_compare_manifest(manifest_path: Path) -> LabelCompareManifest:
     manifest_path = manifest_path.resolve()
     raw = load_mapping(manifest_path)
     base_dir = manifest_path.parent
+    reject_unknown_keys(raw, {"dataset", "models", "evaluation"}, "Label comparison manifest")
     dataset_raw = require_mapping(raw, "dataset")
     evaluation_raw = raw.get("evaluation", {})
     if evaluation_raw is None:
         evaluation_raw = {}
     if not isinstance(evaluation_raw, Mapping):
         raise ValueError("Manifest field 'evaluation' must be a mapping.")
+    reject_unknown_keys(
+        dataset_raw,
+        {"path", "id_column", "split_column", "feature_columns", "label_variants"},
+        "Manifest field 'dataset'",
+    )
+    reject_unknown_keys(
+        evaluation_raw,
+        {"train_split_values", "oos_split_value", "random_seed"},
+        "Manifest field 'evaluation'",
+    )
     models = tuple(require_string_list(raw, "models"))
     if not models:
         raise ValueError("Manifest field 'models' must not be empty.")
+    reject_duplicate_strings(models, "Manifest field 'models'")
     unsupported = [model for model in models if model not in SUPPORTED_MODELS]
     if unsupported:
         raise ValueError(f"Unsupported model family: {', '.join(sorted(unsupported))}")
@@ -154,6 +171,9 @@ def load_label_compare_manifest(manifest_path: Path) -> LabelCompareManifest:
         raise ValueError("Manifest field 'dataset.feature_columns' must not be empty.")
     if not dataset.label_variants:
         raise ValueError("Manifest field 'dataset.label_variants' must not be empty.")
+    reject_duplicate_strings(dataset.feature_columns, "Manifest field 'dataset.feature_columns'")
+    reject_duplicate_strings(dataset.label_variants, "Manifest field 'dataset.label_variants'")
+    require_existing_path(dataset.path, "Manifest field 'dataset.path'")
 
     train_split_values = tuple(require_string_list(evaluation_raw, "train_split_values")) or ("train",)
     evaluation = LabelEvaluationConfig(

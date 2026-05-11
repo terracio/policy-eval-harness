@@ -9,6 +9,7 @@ from policy_eval_harness.public_contracts import (
     DEMO_EVALUATE_RELATIVE_ARTIFACTS,
     DEMO_REPLAY_RELATIVE_ARTIFACTS,
     LABEL_COMPARE_RELATIVE_ARTIFACTS,
+    compare_artifact_bundle,
     verify_public_contracts,
 )
 from tests.support.artifact_assertions import assert_artifact_bundle_matches
@@ -25,6 +26,18 @@ class PublicContractTests(unittest.TestCase):
 
     def test_public_contract_verification_runs_end_to_end(self) -> None:
         verify_public_contracts(self.repo_root, self.root / "verification")
+
+    def test_public_contract_rejects_unexpected_artifacts(self) -> None:
+        actual_root = self.root / "actual"
+        expected_root = self.root / "expected"
+        actual_root.mkdir()
+        expected_root.mkdir()
+        (actual_root / "artifact.json").write_text('{"ok": true}\n', encoding="utf-8")
+        (expected_root / "artifact.json").write_text('{"ok": true}\n', encoding="utf-8")
+        (actual_root / "extra.json").write_text('{"extra": true}\n', encoding="utf-8")
+
+        with self.assertRaisesRegex(AssertionError, "unexpected: extra.json"):
+            compare_artifact_bundle(actual_root, expected_root, [Path("artifact.json")])
 
     def test_demo_contract_matches_checked_in_goldens(self) -> None:
         from policy_eval_harness.demo import run_demo_from_manifest

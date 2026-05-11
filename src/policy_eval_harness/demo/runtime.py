@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Mapping
@@ -8,6 +9,7 @@ from typing import Any, Dict, Mapping
 import pandas as pd
 import yaml
 
+from policy_eval_harness._utils.manifest import reject_unknown_keys, require_existing_path
 from policy_eval_harness.evaluation import EvaluationArtifacts, run_evaluation_from_manifest
 from policy_eval_harness.replay import ReplayArtifacts, canonical_json, run_replay_from_manifest
 
@@ -26,12 +28,17 @@ def load_demo_manifest(manifest_path: Path) -> Dict[str, Any]:
         payload = yaml.safe_load(handle)
     if not isinstance(payload, Mapping):
         raise ValueError(f"Demo manifest must contain a mapping: {manifest_path!s}")
+    reject_unknown_keys(payload, {"name", "description", "replay_manifest", "evaluation_manifest"}, "Demo manifest")
+    replay_manifest = _resolve_path(manifest_path.parent, _require_string(payload, "replay_manifest"))
+    evaluation_manifest = _resolve_path(manifest_path.parent, _require_string(payload, "evaluation_manifest"))
+    require_existing_path(replay_manifest, "Demo manifest field 'replay_manifest'")
+    require_existing_path(evaluation_manifest, "Demo manifest field 'evaluation_manifest'")
     return {
         "manifest_path": manifest_path,
-        "replay_manifest": _resolve_path(manifest_path.parent, _require_string(payload, "replay_manifest")),
-        "evaluation_manifest": _resolve_path(manifest_path.parent, _require_string(payload, "evaluation_manifest")),
-        "name": payload.get("name"),
-        "description": payload.get("description"),
+        "replay_manifest": replay_manifest,
+        "evaluation_manifest": evaluation_manifest,
+        "name": _optional_string(payload, "name"),
+        "description": _optional_string(payload, "description"),
     }
 
 
@@ -49,17 +56,19 @@ def run_demo_from_manifest(manifest_path: Path, out_dir: Path) -> DemoArtifacts:
 
     cases_path = _cases_path_from_replay_manifest(manifest["replay_manifest"])
     combined_summary_path = evaluation_inputs_dir / "episode_summary.csv"
+    copied_cases_path = evaluation_inputs_dir / cases_path.name
     combined_summary_path.write_text(
         replay_artifacts.episode_summary_path.read_text(encoding="utf-8"),
         encoding="utf-8",
     )
+    shutil.copyfile(cases_path, copied_cases_path)
 
     resolved_eval_manifest_path = evaluation_inputs_dir / "evaluate.resolved.yaml"
     _write_resolved_evaluation_manifest(
         template_path=manifest["evaluation_manifest"],
         out_path=resolved_eval_manifest_path,
-        episode_summary_path=combined_summary_path,
-        cases_path=cases_path,
+        episode_summary_path=Path(combined_summary_path.name),
+        cases_path=Path(copied_cases_path.name),
     )
     evaluation_artifacts = run_evaluation_from_manifest(resolved_eval_manifest_path, evaluation_root)
 
@@ -132,6 +141,15 @@ def _require_string(container: Mapping[str, Any], key: str) -> str:
     value = container.get(key)
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"Field {key!r} must be a non-empty string.")
+    return value
+
+
+def _optional_string(container: Mapping[str, Any], key: str) -> str | None:
+    value = container.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"Field {key!r} must be a non-empty string when provided.")
     return value
 
 

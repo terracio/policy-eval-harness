@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 import pandas as pd
+import yaml
 from pandas.testing import assert_frame_equal
 from typer.testing import CliRunner
 
@@ -55,7 +56,9 @@ class DemoWorkflowTests(unittest.TestCase):
 
         expected_files = [
             Path("evaluate/comparison_panel.parquet"),
+            Path("evaluate/inputs/cases.csv"),
             Path("evaluate/inputs/episode_summary.csv"),
+            Path("evaluate/inputs/evaluate.resolved.yaml"),
             Path("evaluate/promotion_decisions.json"),
             Path("evaluate/scorecard.csv"),
             Path("replay/_combined/episode_summary.csv"),
@@ -123,6 +126,12 @@ class DemoWorkflowTests(unittest.TestCase):
                 self._normalized_frame(pd.read_parquet(actual_path)),
                 self._normalized_frame(pd.read_parquet(expected_path)),
                 check_dtype=False,
+            )
+            return
+        if suffix in {".yaml", ".yml"}:
+            self.assertEqual(
+                yaml.safe_load(actual_path.read_text(encoding="utf-8")),
+                yaml.safe_load(expected_path.read_text(encoding="utf-8")),
             )
             return
         self.fail(f"Unsupported artifact type for comparison: {actual_path}")

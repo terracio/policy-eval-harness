@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Sequence
 
 import pandas as pd
+import yaml
 from pandas.testing import assert_frame_equal
 
 from policy_eval_harness.demo import run_demo_from_manifest
@@ -30,7 +31,9 @@ DEMO_REPLAY_RELATIVE_ARTIFACTS: tuple[Path, ...] = (
 
 DEMO_EVALUATE_RELATIVE_ARTIFACTS: tuple[Path, ...] = (
     Path("comparison_panel.parquet"),
+    Path("inputs/cases.csv"),
     Path("inputs/episode_summary.csv"),
+    Path("inputs/evaluate.resolved.yaml"),
     Path("promotion_decisions.json"),
     Path("scorecard.csv"),
 )
@@ -93,10 +96,20 @@ def _verify_ablation_contract(repo_root: Path, out_root: Path) -> None:
     compare_artifact_bundle(first.factor_effects_path.parent, second.factor_effects_path.parent, ABLATION_RELATIVE_ARTIFACTS)
 
 
-def compare_artifact_bundle(actual_root: Path, expected_root: Path, relative_paths: Sequence[Path]) -> None:
+def compare_artifact_bundle(
+    actual_root: Path,
+    expected_root: Path,
+    relative_paths: Sequence[Path],
+    *,
+    require_exact: bool = True,
+) -> None:
     actual_root = Path(actual_root)
     expected_root = Path(expected_root)
-    for relative_path in relative_paths:
+    contract_paths = tuple(Path(path) for path in relative_paths)
+    if require_exact:
+        _assert_exact_artifact_set(actual_root, contract_paths, "actual")
+        _assert_exact_artifact_set(expected_root, contract_paths, "expected")
+    for relative_path in contract_paths:
         compare_artifact_file(actual_root / relative_path, expected_root / relative_path)
 
 
@@ -132,12 +145,40 @@ def compare_artifact_file(actual_path: Path, expected_path: Path) -> None:
         if actual_path.read_text(encoding="utf-8") != expected_path.read_text(encoding="utf-8"):
             raise AssertionError(f"Markdown artifact mismatch: {actual_path} != {expected_path}")
         return
+    if suffix in {".yaml", ".yml"}:
+        if _load_yaml(actual_path) != _load_yaml(expected_path):
+            raise AssertionError(f"YAML artifact mismatch: {actual_path} != {expected_path}")
+        return
 
     raise ValueError(f"Unsupported artifact type for comparison: {actual_path}")
 
 
+def _assert_exact_artifact_set(root: Path, relative_paths: Sequence[Path], label: str) -> None:
+    observed = _relative_file_set(root)
+    expected = {Path(path) for path in relative_paths}
+    unexpected = sorted(observed - expected)
+    missing = sorted(expected - observed)
+    if unexpected or missing:
+        parts = []
+        if unexpected:
+            parts.append("unexpected: " + ", ".join(str(path) for path in unexpected))
+        if missing:
+            parts.append("missing: " + ", ".join(str(path) for path in missing))
+        raise AssertionError(f"{label.title()} artifact set mismatch for {root}: {'; '.join(parts)}")
+
+
+def _relative_file_set(root: Path) -> set[Path]:
+    if not root.exists():
+        return set()
+    return {path.relative_to(root) for path in root.rglob("*") if path.is_file()}
+
+
 def _load_json(path: Path) -> object:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _load_yaml(path: Path) -> object:
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
 def _normalized_frame(frame: pd.DataFrame) -> pd.DataFrame:
