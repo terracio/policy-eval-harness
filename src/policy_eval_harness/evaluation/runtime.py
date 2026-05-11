@@ -10,7 +10,10 @@ from policy_eval_harness.evaluation.constants import (
     SCORECARD_FILENAME,
 )
 from policy_eval_harness.evaluation.manifest import load_evaluation_manifest
-from policy_eval_harness.evaluation.panels import build_replay_panel, build_selection_panel
+from policy_eval_harness.evaluation.panels import (
+    build_replay_panel,
+    build_selection_panel,
+)
 from policy_eval_harness.evaluation.replay_profile import evaluate_replay_profile
 from policy_eval_harness.evaluation.selection_profile import evaluate_selection_profile
 from policy_eval_harness.evaluation.types import EvaluationArtifacts

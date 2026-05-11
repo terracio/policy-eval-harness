@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Mapping, Optional
 
 import yaml
 
-from policy_eval_harness._utils.paths import resolve_path
+from policy_eval_harness._utils.json import normalize_json_value
 from policy_eval_harness._utils.manifest import (
     optional_bool,
     reject_duplicate_strings,
@@ -14,6 +14,7 @@ from policy_eval_harness._utils.manifest import (
     require_existing_path,
     require_numeric_mapping_values,
 )
+from policy_eval_harness._utils.paths import resolve_path
 from policy_eval_harness.evaluation.constants import (
     DEFAULT_SELECTION_THRESHOLDS,
     DEFAULT_SEQUENTIAL_THRESHOLDS,
@@ -29,7 +30,6 @@ from policy_eval_harness.evaluation.types import (
     SplitConfig,
 )
 from policy_eval_harness.replay import canonical_json
-from policy_eval_harness._utils.json import normalize_json_value
 
 
 def load_evaluation_manifest(manifest_path: Path) -> EvaluationManifest:

@@ -89,7 +89,14 @@ The public contract verification script regenerates the checked-in demo and work
 python scripts/verify_public_contracts.py
 ```
 
-CI runs that same verification alongside the unit test suite on Python 3.10.
+For the full local quality gate that CI runs:
+
+```bash
+python -m pip install -e ".[dev]"
+python scripts/check.py
+```
+
+That command runs linting, type checks, Python line-count enforcement, bytecode compilation, the unit test suite, and public contract verification on Python 3.10.
 
 ## Expected Outputs
 

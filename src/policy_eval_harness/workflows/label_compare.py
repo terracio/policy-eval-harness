@@ -18,11 +18,11 @@ from policy_eval_harness._utils.paths import resolve_path
 from policy_eval_harness.io.tables import read_table
 from policy_eval_harness.workflows.common import (
     load_mapping,
+    optional_string,
     require_columns,
     require_mapping,
     require_string,
     require_string_list,
-    optional_string,
     to_bool,
 )
 from policy_eval_harness.workflows.constants import (
@@ -73,7 +73,7 @@ def run_label_compare_from_manifest(manifest_path: Path, out_dir: Path) -> Label
     summary_models: Dict[str, Any] = {}
 
     for model_name in manifest.models:
-        model_rows = []
+        model_rows: list[Dict[str, Any]] = []
         for label_name in manifest.dataset.label_variants:
             y_train = data.loc[train_mask, label_name].map(_to_binary_label)
             y_oos = data.loc[oos_mask, label_name].map(_to_binary_label)
@@ -98,7 +98,7 @@ def run_label_compare_from_manifest(manifest_path: Path, out_dir: Path) -> Label
             rows.append(row)
             model_rows.append(row)
 
-        ordered_model_rows = sorted(model_rows, key=lambda item: (-item["oos_auc"], item["label_variant"]))
+        ordered_model_rows = sorted(model_rows, key=lambda item: (-float(item["oos_auc"]), str(item["label_variant"])))
         summary_models[model_name] = {
             "best_label_variant": ordered_model_rows[0]["label_variant"],
             "best_oos_auc": ordered_model_rows[0]["oos_auc"],

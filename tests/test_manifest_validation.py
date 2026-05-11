@@ -10,7 +10,10 @@ import yaml
 
 from policy_eval_harness.evaluation import load_evaluation_manifest
 from policy_eval_harness.replay import load_replay_manifest
-from policy_eval_harness.workflows import load_ablation_manifest, load_label_compare_manifest
+from policy_eval_harness.workflows import (
+    load_ablation_manifest,
+    load_label_compare_manifest,
+)
 from tests.support.evaluation_fixtures import EvaluationFixtureMixin
 
 

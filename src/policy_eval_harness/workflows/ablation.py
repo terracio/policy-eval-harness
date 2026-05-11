@@ -14,15 +14,15 @@ from policy_eval_harness._utils.manifest import (
 )
 from policy_eval_harness._utils.paths import resolve_path
 from policy_eval_harness.io.tables import read_table
+from policy_eval_harness.workflows.ablation_metrics import (
+    bootstrap_interaction_ci,
+    metric_value_from_input,
+)
 from policy_eval_harness.workflows.common import (
     load_mapping,
     optional_string,
     require_mapping,
     require_string,
-)
-from policy_eval_harness.workflows.ablation_metrics import (
-    bootstrap_interaction_ci,
-    metric_value_from_input,
 )
 from policy_eval_harness.workflows.constants import (
     ABLATION_FACTOR_EFFECTS_FILENAME,

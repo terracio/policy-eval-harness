@@ -13,7 +13,11 @@ from pandas.testing import assert_frame_equal
 from typer.testing import CliRunner
 
 from policy_eval_harness.cli import app
-from policy_eval_harness.replay import canonical_json, load_universe, run_replay_from_manifest
+from policy_eval_harness.replay import (
+    canonical_json,
+    load_universe,
+    run_replay_from_manifest,
+)
 from policy_eval_harness.replay.runtime import normalize_json_value
 
 CLI_RUNNER = CliRunner()

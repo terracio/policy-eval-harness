@@ -7,7 +7,10 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from policy_eval_harness._utils.json import normalize_json_value, normalize_timestamp
-from policy_eval_harness.replay.constants import CASE_RESERVED_COLUMNS, STEP_RESERVED_COLUMNS
+from policy_eval_harness.replay.constants import (
+    CASE_RESERVED_COLUMNS,
+    STEP_RESERVED_COLUMNS,
+)
 from policy_eval_harness.replay.types import ReplayCase, ReplayStep, ReplayUniverse
 
 
@@ -74,7 +77,10 @@ def _read_table(path: Path) -> List[Dict[str, Any]]:
         frame = pd.read_parquet(path)
     else:
         raise ValueError("Unsupported table format: {!r}".format(path.suffix))
-    return frame.to_dict(orient="records")
+    return [
+        {str(key): value for key, value in record.items()}
+        for record in frame.to_dict(orient="records")
+    ]
 
 
 def _normalize_case_id(value: Any) -> str:
@@ -104,4 +110,3 @@ def _required_timestamp(value: Any, field_name: str) -> str:
     if normalized is None:
         raise ValueError("Field '{}' requires a valid UTC timestamp.".format(field_name))
     return normalized
-

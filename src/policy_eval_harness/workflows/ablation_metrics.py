@@ -57,7 +57,10 @@ def bootstrap_interaction_ci(
     rng = np.random.default_rng(seed)
     interactions: List[float] = []
     for _ in range(n_samples):
-        sampled_case_ids = rng.choice(shared_case_ids, size=len(shared_case_ids), replace=True)
+        sampled_case_ids = [
+            str(case_id)
+            for case_id in rng.choice(shared_case_ids, size=len(shared_case_ids), replace=True)
+        ]
         sampled = _resample_panel_by_case(split_frame, sampled_case_ids)
         values = {
             key: metric_value_from_input(

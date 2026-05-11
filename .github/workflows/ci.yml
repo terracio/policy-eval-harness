@@ -5,8 +5,9 @@ on:
   pull_request:
 
 jobs:
-  unit-tests:
+  quality:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -15,66 +16,10 @@ jobs:
         with:
           python-version: "3.10"
 
-      - name: Install package
+      - name: Install package and tooling
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e .
+          python -m pip install -e ".[dev]"
 
-      - name: Run unit tests
-        run: python -m unittest discover -s tests -t .
-
-  integration-demo:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-
-      - name: Install package
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e .
-
-      - name: Verify demo contract
-        run: python -m unittest tests.test_public_contracts.PublicContractTests.test_demo_contract_matches_checked_in_goldens
-
-  integration-workflows:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-
-      - name: Install package
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e .
-
-      - name: Verify workflow contracts
-        run: |
-          python -m unittest tests.test_public_contracts.PublicContractTests.test_label_compare_contract_matches_checked_in_goldens
-          python -m unittest tests.test_public_contracts.PublicContractTests.test_ablation_contract_matches_checked_in_goldens
-
-  repro-check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-
-      - name: Install package
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e .
-
-      - name: Verify public contracts
-        run: python scripts/verify_public_contracts.py
+      - name: Run quality gates
+        run: python scripts/check.py

@@ -3,7 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Sequence
 
-from policy_eval_harness.public_contracts import compare_artifact_bundle, compare_artifact_file
+from policy_eval_harness.public_contracts import (
+    compare_artifact_bundle,
+    compare_artifact_file,
+)
 
 
 def assert_artifact_bundle_matches(testcase, actual_root: Path, expected_root: Path, relative_paths: Sequence[Path]) -> None:

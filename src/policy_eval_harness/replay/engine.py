@@ -85,7 +85,7 @@ def _run_case(
     state = None
     decision_count = 0
     error_count = 0
-    summary_metrics = {}
+    summary_metrics: Dict[str, Any] = {}
     final_status = None
     termination_reason = None
     terminated = False
@@ -250,11 +250,11 @@ def _coerce_transition(transition: Any) -> ReplayTransition:
 
 
 def _write_csv(path: Path, columns: Sequence[str], rows: Sequence[Mapping[str, Any]]) -> None:
-    pd.DataFrame(rows, columns=columns).to_csv(path, index=False)
+    pd.DataFrame(list(rows), columns=list(columns)).to_csv(path, index=False)
 
 
 def _write_parquet(path: Path, columns: Sequence[str], rows: Sequence[Mapping[str, Any]]) -> None:
-    pd.DataFrame(rows, columns=columns).to_parquet(path, index=False)
+    pd.DataFrame(list(rows), columns=list(columns)).to_parquet(path, index=False)
 
 
 def _write_run_metadata(
@@ -278,4 +278,3 @@ def _write_run_metadata(
         "variant_ids": [variant.variant_id for variant in variants],
     }
     path.write_text(canonical_json(metadata) + "\n", encoding="utf-8")
-

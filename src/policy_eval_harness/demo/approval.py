@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional, cast
 
 from policy_eval_harness.replay import ReplayStepInput, ReplayTransition
+from policy_eval_harness.replay.types import JSONValue
 
 
 def _as_float(value: Any, default: float = 0.0) -> float:
@@ -11,14 +12,24 @@ def _as_float(value: Any, default: float = 0.0) -> float:
     return float(value)
 
 
+def _as_int(value: Any, default: int = 0) -> int:
+    if value is None:
+        return default
+    return int(value)
+
+
+def _state_payload(state: Mapping[str, float]) -> JSONValue:
+    return cast(JSONValue, dict(state))
+
+
 def _current_state(step_input: ReplayStepInput) -> Dict[str, float]:
-    previous = step_input.state if isinstance(step_input.state, Mapping) else {}
+    previous: Mapping[str, Any] = step_input.state if isinstance(step_input.state, Mapping) else {}
     observation = step_input.step.observation
     return {
         "max_approve": max(_as_float(previous.get("max_approve")), _as_float(observation.get("approve_signal"))),
         "max_reject": max(_as_float(previous.get("max_reject")), _as_float(observation.get("reject_signal"))),
         "max_escalate": max(_as_float(previous.get("max_escalate")), _as_float(observation.get("escalate_signal"))),
-        "steps_seen": int(previous.get("steps_seen", 0)) + 1,
+        "steps_seen": _as_int(previous.get("steps_seen"), 0) + 1,
     }
 
 
@@ -109,18 +120,18 @@ def approval_workflow_executor(
     case = step_input.case
     state = _current_state(step_input)
     metadata = case.metadata
-    max_steps = int(metadata.get("max_steps", 6))
+    max_steps = _as_int(metadata.get("max_steps"), 6)
     decision = None if action is None else str(action.get("decision", "")).upper()
 
     if not decision:
         if step_input.step.step_index + 1 >= max_steps:
             return ReplayTransition(
-                next_state=state,
+                next_state=_state_payload(state),
                 terminated=True,
                 termination_reason="max_steps",
                 final_status="completed",
                 metrics={
-                    "utility": float(metadata.get("max_steps_penalty", -0.9)),
+                    "utility": _as_float(metadata.get("max_steps_penalty"), -0.9),
                     "timed_out_cases": 1.0,
                 },
                 trace={
@@ -129,18 +140,18 @@ def approval_workflow_executor(
                 },
             )
         return ReplayTransition(
-            next_state=state,
+            next_state=_state_payload(state),
             terminated=False,
             final_status="in_progress",
-            metrics={"utility": -float(metadata.get("delay_penalty", 0.06))},
+            metrics={"utility": -_as_float(metadata.get("delay_penalty"), 0.06)},
             trace={"outcome": "wait"},
         )
 
     truth_action = str(metadata.get("truth_action", "")).upper()
-    correct_reward = float(metadata.get("correct_reward", 1.0))
-    wrong_decision_penalty = float(metadata.get("wrong_decision_penalty", -1.1))
-    escalate_reward = float(metadata.get("escalate_reward", 0.7))
-    easy_escalate_penalty = float(metadata.get("easy_escalate_penalty", -0.35))
+    correct_reward = _as_float(metadata.get("correct_reward"), 1.0)
+    wrong_decision_penalty = _as_float(metadata.get("wrong_decision_penalty"), -1.1)
+    escalate_reward = _as_float(metadata.get("escalate_reward"), 0.7)
+    easy_escalate_penalty = _as_float(metadata.get("easy_escalate_penalty"), -0.35)
 
     if decision == "ESCALATE":
         utility = escalate_reward if truth_action == "ESCALATE" else easy_escalate_penalty
@@ -153,7 +164,7 @@ def approval_workflow_executor(
         outcome = "incorrect_terminal_decision"
 
     return ReplayTransition(
-        next_state=state,
+        next_state=_state_payload(state),
         terminated=True,
         termination_reason=decision.lower(),
         final_status="completed",

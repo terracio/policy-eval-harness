@@ -18,6 +18,14 @@ dependencies = [
   "scikit-learn>=1.4,<2.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.10,<2.0",
+  "pandas-stubs>=2.0,<3.0",
+  "ruff>=0.6,<1.0",
+  "types-PyYAML>=6.0,<7.0",
+]
+
 [project.scripts]
 policy-eval = "policy_eval_harness.cli:app"
 
@@ -26,3 +34,17 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+extend-exclude = ["src/policy_eval_harness.egg-info"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.mypy]
+python_version = "3.10"
+mypy_path = "src"
+ignore_missing_imports = true
+warn_unused_configs = true
